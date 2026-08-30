@@ -32,7 +32,7 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Alih Recovery Report — {{orUnknown .Identity.WorkspaceName}}</title>
+<title>ALIH Recovery Report — {{orUnknown .Identity.WorkspaceName}}</title>
 <style>
 :root { color-scheme: light dark; }
 body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -58,7 +58,7 @@ footer { margin-top: 3rem; font-size: .85rem; opacity: .75; }
 </style>
 </head>
 <body>
-<h1>Alih — Recovery Report</h1>
+<h1>ALIH — Recovery Report</h1>
 <p class="sub">Generated {{.GeneratedAt.Format "2006-01-02 15:04:05 UTC"}} from archived evidence only. The source was not contacted.</p>
 
 <h2>1. Archive identity</h2>
@@ -69,7 +69,7 @@ footer { margin-top: 3rem; font-size: .85rem; opacity: .75; }
 <dt>Extracted by</dt><dd>{{if .Identity.ExtractedByID}}{{orUnknown .Identity.ExtractedByName}} <span class="mono">(ID: {{.Identity.ExtractedByID}})</span>{{else}}<span class="bad">not recorded: this archive does not name the account that produced it</span>{{end}}<br><span class="finding">This archive holds what that account could reach through the official API. Whether that is the entire Workspace is not established.</span></dd>
 <dt>Source read completed</dt><dd>{{if .Identity.SourceSnapshotCompletedAt}}{{.Identity.SourceSnapshotCompletedAt.Format "2006-01-02 15:04:05 UTC"}}{{else}}not recorded by this archive{{end}}</dd>
 <dt>Archive completed</dt><dd>{{if .Identity.ArchiveCompletedAt}}{{.Identity.ArchiveCompletedAt.Format "2006-01-02 15:04:05 UTC"}}{{if .Identity.CompletionLag}}<br><span class="finding">{{.Identity.CompletionLag}}</span>{{end}}{{else}}<span class="bad">not recorded: this archive states no completion time</span>{{end}}</dd>
-<dt>Created by</dt><dd>Alih {{orUnknown .Identity.CreatedByAlihVersion}}</dd>
+<dt>Created by</dt><dd>ALIH {{orUnknown .Identity.CreatedByAlihVersion}}</dd>
 <dt>Recorded archive status</dt><dd>{{orUnknown .Identity.RecordedStatus}}</dd>
 <dt>Source snapshot digest</dt><dd class="mono">{{orUnknown .Identity.SourceSnapshotDigest}}</dd>
 <dt>Source snapshot</dt><dd>{{if .Identity.SourceSnapshotAtomic}}atomic{{else}}<span class="tag warn">NON-ATOMIC</span> records may reflect different moments of the extraction{{end}}</dd>
@@ -181,7 +181,7 @@ footer { margin-top: 3rem; font-size: .85rem; opacity: .75; }
 <ul>{{range .MustNotClaim}}<li>{{.}}</li>{{end}}</ul>
 
 <footer>
-Alih {{orUnknown .AlihVersion}} recovery report, schema {{.SchemaVersion}}.
+ALIH {{orUnknown .AlihVersion}} recovery report, schema {{.SchemaVersion}}.
 Produced from the archive's own evidence and its M5 verification result.
 No source data modified. No archive data modified.
 </footer>

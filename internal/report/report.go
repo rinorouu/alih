@@ -291,18 +291,18 @@ func buildVerification(verification verify.Report) Verification {
 	}
 	switch verification.Result {
 	case verify.ResultVerified:
-		summary.Headline = "Verification passed: everything Alih expected within its supported scope is archived and provable from this archive."
+		summary.Headline = "Verification passed: everything ALIH expected within its supported scope is archived and provable from this archive."
 		summary.FiguresTrust = "Figures recorded in the archive were corroborated by verification."
 	case verify.ResultVerifiedWithLimitations:
 		summary.Headline = "Verification passed within the supported scope, and source limitations remain that this archive cannot resolve."
 		summary.FiguresTrust = "Figures recorded in the archive were corroborated by verification."
 	case verify.ResultIncomplete:
-		summary.Headline = "Verification did not pass: Alih expected supported data that this archive does not contain."
+		summary.Headline = "Verification did not pass: ALIH expected supported data that this archive does not contain."
 		summary.FiguresTrust = fmt.Sprintf(
-			"%d of %d checks passed and what they establish is still valid evidence; the archive is nonetheless missing supported data Alih expected, so it is not a complete copy. Figures that depend on %s are not corroborated.",
+			"%d of %d checks passed and what they establish is still valid evidence; the archive is nonetheless missing supported data ALIH expected, so it is not a complete copy. Figures that depend on %s are not corroborated.",
 			len(outcome.Established), outcome.Total, nameList(outcome.NotEstablished))
 	default:
-		summary.Headline = "Verification failed: Alih cannot prove this archive is intact."
+		summary.Headline = "Verification failed: ALIH cannot prove this archive is intact."
 		// One failing check does not invalidate the checks that passed. The
 		// distrust is scoped to what actually failed, so a reader can still
 		// use the proven evidence without treating the archive as sound.

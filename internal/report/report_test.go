@@ -125,7 +125,7 @@ func TestReportFromVerifiedWithLimitationsArchiveStatesScopeWithoutOverclaiming(
 	if document.Failed() {
 		t.Fatal("a verified archive was reported as failed")
 	}
-	if !strings.Contains(document.Conclusion.Verdict, "proven within Alih's supported scope") {
+	if !strings.Contains(document.Conclusion.Verdict, "proven within ALIH's supported scope") {
 		t.Fatalf("verdict = %q", document.Conclusion.Verdict)
 	}
 	// A passing archive must never carry failure language.
