@@ -23,10 +23,18 @@ func RenderText(output io.Writer, document Document) error {
 	writer.field("Archive", identity.ArchivePath)
 	writer.field("Connector", orUnknown(identity.Connector))
 	writer.field("Source workspace", fmt.Sprintf("%s (ID: %s)", orUnknown(identity.WorkspaceName), orUnknown(identity.WorkspaceID)))
-	if identity.CreatedAt != nil {
-		writer.field("Archive created", identity.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
+	if identity.SourceSnapshotCompletedAt != nil {
+		writer.field("Source read completed", identity.SourceSnapshotCompletedAt.Format("2006-01-02 15:04:05 UTC"))
 	} else {
-		writer.field("Archive created", "unknown: the archive does not record a usable creation time")
+		writer.field("Source read completed", "not recorded by this archive")
+	}
+	if identity.ArchiveCompletedAt != nil {
+		writer.field("Archive completed", identity.ArchiveCompletedAt.Format("2006-01-02 15:04:05 UTC"))
+	} else {
+		writer.field("Archive completed", "not recorded: this archive states no completion time")
+	}
+	if identity.CompletionLag != "" {
+		writer.field("", identity.CompletionLag)
 	}
 	writer.field("Created by", orUnknown(identity.CreatedByAlihVersion))
 	writer.field("Recorded archive status", orUnknown(identity.RecordedStatus))

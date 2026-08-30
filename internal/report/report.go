@@ -26,19 +26,24 @@ const Kind = "alih_recovery_report"
 
 // Identity answers where the archive came from and when it was made.
 type Identity struct {
-	ArchivePath          string     `json:"archive_path"`
-	Connector            string     `json:"connector"`
-	WorkspaceID          string     `json:"workspace_id"`
-	WorkspaceName        string     `json:"workspace_name"`
-	CreatedAt            *time.Time `json:"created_at"`
-	RecordedStatus       string     `json:"recorded_archive_status"`
-	CreatedByAlihVersion string     `json:"created_by_alih_version"`
-	ArchiveSchemaVersion int        `json:"archive_schema_version"`
-	SourceSnapshotDigest string     `json:"source_snapshot_logical_digest"`
-	SourceSnapshotAtomic bool       `json:"source_snapshot_atomic"`
-	RecordedFiles        int        `json:"recorded_files"`
-	ManifestReadable     bool       `json:"manifest_readable"`
-	ManifestError        string     `json:"manifest_error,omitempty"`
+	ArchivePath   string `json:"archive_path"`
+	Connector     string `json:"connector"`
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	// SourceSnapshotCompletedAt is when the source was read; ArchiveCompletedAt
+	// is when this artifact was finished. They are separate questions and the
+	// report answers them separately rather than presenting one as the other.
+	SourceSnapshotCompletedAt *time.Time `json:"source_snapshot_completed_at"`
+	ArchiveCompletedAt        *time.Time `json:"archive_completed_at"`
+	CompletionLag             string     `json:"completion_lag,omitempty"`
+	RecordedStatus            string     `json:"recorded_archive_status"`
+	CreatedByAlihVersion      string     `json:"created_by_alih_version"`
+	ArchiveSchemaVersion      int        `json:"archive_schema_version"`
+	SourceSnapshotDigest      string     `json:"source_snapshot_logical_digest"`
+	SourceSnapshotAtomic      bool       `json:"source_snapshot_atomic"`
+	RecordedFiles             int        `json:"recorded_files"`
+	ManifestReadable          bool       `json:"manifest_readable"`
+	ManifestError             string     `json:"manifest_error,omitempty"`
 }
 
 // Verification restates the M5 result without softening it, and without
@@ -217,10 +222,15 @@ func buildIdentity(inputs Inputs) Identity {
 		identity.WorkspaceID = manifest.Source.ID
 		identity.WorkspaceName = manifest.Source.Name
 	}
-	if !manifest.CreatedAt.IsZero() {
-		created := manifest.CreatedAt.UTC()
-		identity.CreatedAt = &created
+	if !manifest.SourceSnapshotCompletedAt.IsZero() {
+		completed := manifest.SourceSnapshotCompletedAt.UTC()
+		identity.SourceSnapshotCompletedAt = &completed
 	}
+	if manifest.ArchiveCompletedAt != nil && !manifest.ArchiveCompletedAt.IsZero() {
+		completed := manifest.ArchiveCompletedAt.UTC()
+		identity.ArchiveCompletedAt = &completed
+	}
+	identity.CompletionLag = completionLag(identity.SourceSnapshotCompletedAt, identity.ArchiveCompletedAt)
 	identity.RecordedStatus = manifest.Status
 	identity.CreatedByAlihVersion = manifest.AlihVersion
 	identity.ArchiveSchemaVersion = manifest.SchemaVersion
@@ -228,6 +238,20 @@ func buildIdentity(inputs Inputs) Identity {
 	identity.SourceSnapshotAtomic = manifest.InputSnapshot.Atomic
 	identity.RecordedFiles = len(manifest.Files)
 	return identity
+}
+
+// completionLag states the interval between reading the source and finishing
+// the archive. It is the honest answer to "how stale is this archive relative
+// to the moment it describes", and it is only stated when both instants exist.
+func completionLag(snapshotCompleted, archiveCompleted *time.Time) string {
+	if snapshotCompleted == nil || archiveCompleted == nil {
+		return ""
+	}
+	lag := archiveCompleted.Sub(*snapshotCompleted)
+	if lag < 0 {
+		return fmt.Sprintf("the archive records completing %s BEFORE the source extraction it was built from finished; the archive does not explain this", (-lag).Round(time.Second))
+	}
+	return fmt.Sprintf("%s after the source extraction finished", lag.Round(time.Second))
 }
 
 func buildVerification(verification verify.Report) Verification {

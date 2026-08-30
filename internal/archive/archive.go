@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ import (
 )
 
 const (
+	// ArchiveSchemaVersion is the version of the archive manifest format.
+	// Version 2 replaced the ambiguous "created_at" field, which actually held
+	// the M3 extraction time, with two explicitly named instants.
+	ArchiveSchemaVersion = 2
+
 	StatusCreatedUnverified = "CREATED_UNVERIFIED"
 	StatusIncomplete        = "INCOMPLETE"
 	StatusFailed            = "FAILED"
@@ -65,21 +71,29 @@ type Discrepancy struct {
 }
 
 type Manifest struct {
-	SchemaVersion int                    `json:"schema_version"`
-	AlihVersion   string                 `json:"alih_version"`
-	Status        string                 `json:"status"`
-	CreatedAt     time.Time              `json:"created_at"`
-	Connector     string                 `json:"connector"`
-	Source        connector.Workspace    `json:"source"`
-	InputSnapshot InputSnapshot          `json:"input_snapshot"`
-	Inventory     map[string]EntityCount `json:"inventory"`
-	Observed      map[string]int         `json:"observed_entities"`
-	Capabilities  []connector.Capability `json:"capabilities"`
-	Attachments   []AttachmentRecord     `json:"attachments"`
-	Files         []FileRecord           `json:"files"`
-	Limitations   []string               `json:"limitations"`
-	Discrepancies []Discrepancy          `json:"discrepancies"`
-	Verification  VerificationState      `json:"verification"`
+	SchemaVersion int    `json:"schema_version"`
+	AlihVersion   string `json:"alih_version"`
+	Status        string `json:"status"`
+	// SourceSnapshotCompletedAt is the instant the M3 raw extraction finished
+	// reading the source. It says nothing about when this archive was built.
+	SourceSnapshotCompletedAt time.Time `json:"source_snapshot_completed_at"`
+	// ArchiveCompletedAt is the instant this archive's content was complete
+	// and its manifest sealed. It is read from a clock at that moment, never
+	// derived from filesystem timestamps, and is null when the archive was
+	// never completed. It is the one field that legitimately differs between
+	// two archives built from identical evidence.
+	ArchiveCompletedAt *time.Time             `json:"archive_completed_at"`
+	Connector          string                 `json:"connector"`
+	Source             connector.Workspace    `json:"source"`
+	InputSnapshot      InputSnapshot          `json:"input_snapshot"`
+	Inventory          map[string]EntityCount `json:"inventory"`
+	Observed           map[string]int         `json:"observed_entities"`
+	Capabilities       []connector.Capability `json:"capabilities"`
+	Attachments        []AttachmentRecord     `json:"attachments"`
+	Files              []FileRecord           `json:"files"`
+	Limitations        []string               `json:"limitations"`
+	Discrepancies      []Discrepancy          `json:"discrepancies"`
+	Verification       VerificationState      `json:"verification"`
 }
 
 type InputSnapshot struct {
@@ -105,6 +119,10 @@ type Options struct {
 	HTTPClient *http.Client
 	Credential string
 	Sleep      func(context.Context, time.Duration) error
+	// Now supplies the archive completion instant. It exists so that the
+	// timestamp is an injected observation rather than a hidden global, and so
+	// tests can prove it is neither a filesystem mtime nor the snapshot time.
+	Now func() time.Time
 }
 
 // Build creates a new archive directory. A supported attachment failure still
@@ -161,7 +179,7 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 
 	metadata := map[string]string{
 		"alih_version":                   "0.0.1",
-		"archive_schema_version":         "1",
+		"archive_schema_version":         strconv.Itoa(ArchiveSchemaVersion),
 		"archive_status":                 archiveStatus(portable.Attachments),
 		"connector":                      evidence.Connector,
 		"source_workspace_id":            evidence.Workspace.ID,
@@ -176,7 +194,10 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 		return fail(fmt.Errorf("write schema.json: %w", err))
 	}
 
-	manifest, err := buildManifest(staging, evidence, portable)
+	// Every archive member except manifest.json is now written, so this is the
+	// instant the archive's content is complete.
+	completedAt := clock(options)().UTC()
+	manifest, err := buildManifest(staging, evidence, portable, &completedAt)
 	if err != nil {
 		return fail(err)
 	}
@@ -375,7 +396,14 @@ func markAttachmentUnresolved(attachment *model.Attachment, message string) {
 	attachment.Error = stringPointer(message)
 }
 
-func buildManifest(staging string, evidence snapshot.Evidence, portable model.Archive) (Manifest, error) {
+func clock(options Options) func() time.Time {
+	if options.Now != nil {
+		return options.Now
+	}
+	return time.Now
+}
+
+func buildManifest(staging string, evidence snapshot.Evidence, portable model.Archive, completedAt *time.Time) (Manifest, error) {
 	status := archiveStatus(portable.Attachments)
 	inventory := manifestInventory(evidence.Inventory, portable)
 	attachments := make([]AttachmentRecord, 0, len(portable.Attachments))
@@ -413,7 +441,8 @@ func buildManifest(staging string, evidence snapshot.Evidence, portable model.Ar
 	limitations = append(limitations, "Archive creation completed without independent M5 verification; verification status is NOT_RUN.")
 	sort.Strings(limitations)
 	return Manifest{
-		SchemaVersion: 1, AlihVersion: "0.0.1", Status: status, CreatedAt: evidence.FinishedAt,
+		SchemaVersion: ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: status,
+		SourceSnapshotCompletedAt: evidence.FinishedAt, ArchiveCompletedAt: completedAt,
 		Connector: evidence.Connector, Source: evidence.Workspace,
 		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, Status: "COMPLETE", Atomic: false},
 		Inventory:     inventory,
@@ -473,7 +502,10 @@ func archiveStatus(attachments []model.Attachment) string {
 
 func preserveFailedArchive(staging, target string, evidence snapshot.Evidence, portable model.Archive, cause error) (string, error) {
 	manifest := Manifest{
-		SchemaVersion: 1, AlihVersion: "0.0.1", Status: StatusFailed, CreatedAt: evidence.FinishedAt,
+		// A failed archive was never completed, so it records no completion
+		// instant rather than borrowing one from the source snapshot.
+		SchemaVersion: ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: StatusFailed,
+		SourceSnapshotCompletedAt: evidence.FinishedAt, ArchiveCompletedAt: nil,
 		Connector: evidence.Connector, Source: evidence.Workspace,
 		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, Status: "COMPLETE", Atomic: false},
 		Capabilities:  append([]connector.Capability(nil), portable.Capabilities...),

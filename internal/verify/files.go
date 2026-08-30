@@ -98,8 +98,8 @@ func (v *verification) checkManifest(files map[string]archiveFile) (archive.Mani
 	}
 
 	var findings []string
-	if manifest.SchemaVersion != 1 {
-		findings = append(findings, fmt.Sprintf("unsupported manifest schema_version %d", manifest.SchemaVersion))
+	if manifest.SchemaVersion != archive.ArchiveSchemaVersion {
+		findings = append(findings, fmt.Sprintf("unsupported manifest schema_version %d; this Alih build reads version %d", manifest.SchemaVersion, archive.ArchiveSchemaVersion))
 	}
 	if strings.TrimSpace(manifest.Connector) == "" {
 		findings = append(findings, "manifest does not identify the source connector")
@@ -119,7 +119,7 @@ func (v *verification) checkManifest(files map[string]archiveFile) (archive.Mani
 	}
 
 	ok := v.decide("manifest_integrity",
-		fmt.Sprintf("manifest.json describes a %s archive of workspace %q created by Alih %s", manifest.Status, manifest.Source.ID, manifest.AlihVersion),
+		fmt.Sprintf("manifest.json describes a %s archive of workspace %q written by Alih %s", manifest.Status, manifest.Source.ID, manifest.AlihVersion),
 		"manifest.json does not describe a usable archive",
 		findings)
 	v.checkManifestFileInventory(manifest, files)

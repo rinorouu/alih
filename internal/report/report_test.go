@@ -12,7 +12,13 @@ import (
 	"alih/internal/verify"
 )
 
-var generatedAt = time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+var (
+	generatedAt = time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	// The live audit case: the source was read at 01:54 and the archive was
+	// only finished 37m32s later.
+	snapshotCompletedAt = time.Date(2026, 8, 30, 1, 54, 42, 0, time.UTC)
+	archiveCompletedAt  = time.Date(2026, 8, 30, 2, 32, 14, 0, time.UTC)
+)
 
 func stringPointer(value string) *string { return &value }
 func int64Pointer(value int64) *int64    { return &value }
@@ -23,8 +29,9 @@ func healthyInputs() Inputs {
 	return Inputs{
 		ArchivePath: "/archives/example",
 		Manifest: archive.Manifest{
-			SchemaVersion: 1, AlihVersion: "0.0.1", Status: archive.StatusCreatedUnverified,
-			CreatedAt: time.Date(2026, 8, 30, 1, 54, 42, 0, time.UTC), Connector: "clickup",
+			SchemaVersion: archive.ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: archive.StatusCreatedUnverified,
+			SourceSnapshotCompletedAt: snapshotCompletedAt, ArchiveCompletedAt: &archiveCompletedAt,
+			Connector:     "clickup",
 			Source:        connector.Workspace{ID: "w1", Name: "Example Workspace"},
 			InputSnapshot: archive.InputSnapshot{LogicalDigest: "sha256:abc", Status: "COMPLETE", Atomic: false},
 			Files:         []archive.FileRecord{{Path: "alih.db"}, {Path: "schema.json"}},
@@ -592,5 +599,76 @@ func TestSupportedCapabilityIsNotAnIntegrityClaimAboutTheArchive(t *testing.T) {
 	rendered := renderBoth(t, failed)
 	if !strings.Contains(rendered, "describes the source, not this archive") {
 		t.Error("the source/archive distinction is not visible in the rendered report")
+	}
+}
+
+func TestReportSeparatesSourceReadTimeFromArchiveCompletionTime(t *testing.T) {
+	t.Parallel()
+
+	document := Build(healthyInputs())
+	rendered := renderBoth(t, document)
+
+	if document.Identity.SourceSnapshotCompletedAt == nil || !document.Identity.SourceSnapshotCompletedAt.Equal(snapshotCompletedAt) {
+		t.Fatalf("source read instant = %v, want %s", document.Identity.SourceSnapshotCompletedAt, snapshotCompletedAt)
+	}
+	if document.Identity.ArchiveCompletedAt == nil || !document.Identity.ArchiveCompletedAt.Equal(archiveCompletedAt) {
+		t.Fatalf("archive completion instant = %v, want %s", document.Identity.ArchiveCompletedAt, archiveCompletedAt)
+	}
+	// The defect this replaces: the source read time rendered as "Archive created".
+	if strings.Contains(rendered, "Archive created") {
+		t.Error("the report still labels a timestamp as the archive creation time")
+	}
+	for _, expected := range []string{
+		"Source read completed", "2026-08-30 01:54:42 UTC",
+		"Archive completed", "2026-08-30 02:32:14 UTC",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Errorf("report does not state %q", expected)
+		}
+	}
+	// The gap between the two events is stated rather than left for the reader
+	// to assume it is zero.
+	if document.Identity.CompletionLag != "37m32s after the source extraction finished" {
+		t.Errorf("completion lag = %q", document.Identity.CompletionLag)
+	}
+	if !strings.Contains(rendered, "37m32s after the source extraction finished") {
+		t.Error("the interval between reading the source and finishing the archive is not visible")
+	}
+}
+
+func TestReportStatesWhenAnArchiveRecordsNoCompletionTime(t *testing.T) {
+	t.Parallel()
+
+	// A FAILED archive was never completed, so M4 records no completion instant.
+	inputs := failedByAttachmentCorruption()
+	inputs.Manifest.ArchiveCompletedAt = nil
+	document := Build(inputs)
+	rendered := renderBoth(t, document)
+
+	if document.Identity.ArchiveCompletedAt != nil {
+		t.Fatalf("a missing completion time was invented: %s", document.Identity.ArchiveCompletedAt)
+	}
+	if document.Identity.CompletionLag != "" {
+		t.Errorf("a lag was computed without a completion time: %q", document.Identity.CompletionLag)
+	}
+	if !strings.Contains(rendered, "this archive states no completion time") {
+		t.Error("the absent completion time is not disclosed")
+	}
+	// The source read time is still known and must not be dropped with it.
+	if document.Identity.SourceSnapshotCompletedAt == nil {
+		t.Error("the source read instant was discarded along with the missing completion time")
+	}
+}
+
+func TestReportFlagsACompletionTimeBeforeItsOwnSourceEvidence(t *testing.T) {
+	t.Parallel()
+
+	inputs := healthyInputs()
+	impossible := snapshotCompletedAt.Add(-time.Hour)
+	inputs.Manifest.ArchiveCompletedAt = &impossible
+	document := Build(inputs)
+
+	if !strings.Contains(document.Identity.CompletionLag, "BEFORE the source extraction") {
+		t.Fatalf("an archive completing before its own evidence was not flagged: %q", document.Identity.CompletionLag)
 	}
 }
