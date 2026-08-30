@@ -56,7 +56,7 @@ var recoveryClaims = []struct {
 		[]string{"attachment_integrity"},
 	},
 	{
-		"The number of entities in the archive matches the number the extraction observed at the source, so nothing Alih saw was silently dropped on the way into the archive.",
+		"The number of entities in the archive matches the number the extraction observed at the source, so nothing ALIH saw was silently dropped on the way into the archive.",
 		[]string{"count_reconciliation", "source_object_reconciliation"},
 	},
 	{
@@ -134,15 +134,15 @@ func archiveContentStatement(inputs Inputs, statuses map[string]string) Statemen
 func capabilityMeaning(state connector.CapabilityState) string {
 	switch state {
 	case connector.CapabilitySupported:
-		return "Within Alih's supported scope, so data for it was collected into the archive."
+		return "Within ALIH's supported scope, so data for it was collected into the archive."
 	case connector.CapabilityPartial:
 		return "Only partially represented. Do not treat this capability as fully recoverable from the archive."
 	case connector.CapabilityUnsupported:
-		return "Not archived. Alih can reach this source concept but has not implemented portability for it."
+		return "Not archived. ALIH can reach this source concept but has not implemented portability for it."
 	case connector.CapabilityUnavailable:
 		return "Not archived. The official API does not expose enough information to recover it."
 	case connector.CapabilityUnknown:
-		return "Cannot be assessed. Alih could not establish whether this data exists or is recoverable; its absence from the archive is not evidence that it is absent from the source."
+		return "Cannot be assessed. ALIH could not establish whether this data exists or is recoverable; its absence from the archive is not evidence that it is absent from the source."
 	case connector.CapabilityFailed:
 		return "Collection failed. Nothing about this capability is archived or proven."
 	default:
@@ -289,7 +289,7 @@ func buildMustNotClaim(inputs Inputs, document Document, statuses map[string]str
 	if statuses["source_object_reconciliation"] != verify.CheckPass {
 		claims = append(claims, "Do not claim this archive contains everything the extraction observed: the source-object reconciliation did not pass.")
 	}
-	claims = append(claims, "Do not read this report as a statement about the source today. It describes archived evidence only; Alih did not re-read ClickUp to produce it.")
+	claims = append(claims, "Do not read this report as a statement about the source today. It describes archived evidence only; ALIH did not re-read ClickUp to produce it.")
 	return dedupe(claims)
 }
 
@@ -297,34 +297,34 @@ func buildConclusion(inputs Inputs, document Document) Conclusion {
 	conclusion := Conclusion{Result: inputs.Verification.Result}
 	switch inputs.Verification.Result {
 	case verify.ResultVerified:
-		conclusion.Verdict = "Archive integrity is proven within Alih's supported scope."
+		conclusion.Verdict = "Archive integrity is proven within ALIH's supported scope."
 		conclusion.Statements = []string{
-			"Everything Alih expected within its supported scope is archived, and every archived byte matches the evidence recorded for it.",
+			"Everything ALIH expected within its supported scope is archived, and every archived byte matches the evidence recorded for it.",
 			"The archived data can be read and queried locally without ClickUp.",
 		}
 	case verify.ResultVerifiedWithLimitations:
-		conclusion.Verdict = "Archive integrity is proven within Alih's supported scope; the source limitations below still apply and this archive does not resolve them."
+		conclusion.Verdict = "Archive integrity is proven within ALIH's supported scope; the source limitations below still apply and this archive does not resolve them."
 		conclusion.Statements = []string{
-			"Everything Alih expected within its supported scope is archived, and every archived byte matches the evidence recorded for it.",
+			"Everything ALIH expected within its supported scope is archived, and every archived byte matches the evidence recorded for it.",
 			"The archived data can be read and queried locally without ClickUp.",
 			"Source capabilities that are not SUPPORTED were never archived and remain outside anything this archive can prove; their state has not been changed by verification or by this report.",
 		}
 	case verify.ResultIncomplete:
-		conclusion.Verdict = "This archive is NOT a complete recovery source. Alih expected supported data that the archive does not contain."
+		conclusion.Verdict = "This archive is NOT a complete recovery source. ALIH expected supported data that the archive does not contain."
 		conclusion.Statements = []string{
 			"Do not treat this archive as a complete copy of the supported scope.",
-			"The unresolved items listed above were expected by Alih and are missing from the archive; they must be recovered from the source or accepted as lost.",
+			"The unresolved items listed above were expected by ALIH and are missing from the archive; they must be recovered from the source or accepted as lost.",
 			"Parts of the archive that did pass verification remain readable, but completeness is not established.",
 		}
 	default:
 		outcome := summarizeChecks(inputs.Verification)
-		conclusion.Verdict = "Alih cannot prove this archive is intact. Do not rely on it for recovery."
+		conclusion.Verdict = "ALIH cannot prove this archive is intact. Do not rely on it for recovery."
 		conclusion.Statements = []string{
 			fmt.Sprintf("Verification failed on %s. Anything that depends on those checks is not established.", nameList(outcome.NotEstablished)),
 			fmt.Sprintf("%d of %d checks did pass. What they prove is marked PROVEN in the recovery summary above and remains valid evidence for exactly that claim.", len(outcome.Established), outcome.Total),
 			"A passing check does not make the archive as a whole safe to recover from: treat the proven parts as evidence, never as a completeness or integrity guarantee for the archive.",
 			"Do not use this archive as a recovery source until the failures above are explained.",
-			"Alih has not modified or repaired this archive, and producing this report did not change it.",
+			"ALIH has not modified or repaired this archive, and producing this report did not change it.",
 		}
 	}
 	if inputs.ManifestAvailable && !inputs.Manifest.InputSnapshot.Atomic {

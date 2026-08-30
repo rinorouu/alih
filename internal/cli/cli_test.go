@@ -147,7 +147,7 @@ func TestHelp(t *testing.T) {
 		t.Fatalf("Run(--help) returned %d, want 0", code)
 	}
 	for _, expected := range []string{
-		"Usage:\n  alih --help\n  alih auth\n  alih scan [--workspace-id ID]",
+		"Usage:\n  alih --help\n  alih auth\n  alih backup [--workspace-id ID]\n  alih scan [--workspace-id ID]",
 		"auth         Authenticate with ClickUp and list accessible Workspaces",
 		"scan         Inventory one ClickUp Workspace without modifying it",
 		"M1 manual verification:",
@@ -448,7 +448,7 @@ func TestScanUsesSavedCredentialAndPrintsCompletedInventory(t *testing.T) {
 		t.Fatalf("scanned Workspace = %#v, want %#v", scanner.workspace, workspace)
 	}
 	for _, expected := range []string{
-		"ALI H — CLICKUP SCAN",
+		"ALIH — CLICKUP SCAN",
 		"Workspace: Primary (ID: 100)",
 		"Spaces                 1",
 		"Subtasks               5",
@@ -720,7 +720,7 @@ func TestVerifyReportsAProvenArchiveWithoutHidingItsLimitations(t *testing.T) {
 		t.Fatalf("verifier received path %q", verifier.path)
 	}
 	for _, expected := range []string{
-		"ALI H — VERIFICATION",
+		"ALIH — VERIFICATION",
 		"VERIFIED_WITH_LIMITATIONS",
 		"limitation_preservation",
 		"Docs remains PARTIAL",
@@ -752,7 +752,7 @@ func TestVerifyFailsClosedOnACorruptArchive(t *testing.T) {
 	if code := app.Run([]string{"verify", "--archive", "/archives/broken"}); code != 1 {
 		t.Fatalf("Run(verify) returned %d, want 1", code)
 	}
-	if !strings.Contains(stdout.String(), "Alih cannot prove this archive is complete or intact.") {
+	if !strings.Contains(stdout.String(), "ALIH cannot prove this archive is complete or intact.") {
 		t.Fatalf("failure was not stated plainly: %q", stdout.String())
 	}
 	if !strings.Contains(stderr.String(), "archive result is FAILED") {
@@ -857,7 +857,7 @@ func TestReportPrintsAllNineSectionsAsText(t *testing.T) {
 		t.Fatalf("reporter received %q", reporter.path)
 	}
 	for _, section := range []string{
-		"ALI H — RECOVERY REPORT", "1. ARCHIVE IDENTITY", "2. VERIFICATION STATUS",
+		"ALIH — RECOVERY REPORT", "1. ARCHIVE IDENTITY", "2. VERIFICATION STATUS",
 		"3. RECOVERY SUMMARY", "4. ENTITY COVERAGE", "5. ATTACHMENTS",
 		"6. CAPABILITY COVERAGE", "7. LIMITATIONS AND UNPROVEN CLAIMS",
 		"8. DISCREPANCIES AND UNRESOLVED ITEMS", "9. RECOVERY CONCLUSION",

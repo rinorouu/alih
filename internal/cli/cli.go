@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"alih/internal/archive"
 	"alih/internal/connector"
@@ -38,11 +39,12 @@ import (
 	"alih/internal/verify"
 )
 
-const helpText = `Alih is a local-first SaaS data portability tool.
+const helpText = `ALIH is a local-first SaaS data portability tool.
 
 Usage:
   alih --help
   alih auth
+  alih backup [--workspace-id ID]
   alih scan [--workspace-id ID]
   alih extract --output PATH [--workspace-id ID]
   alih export --snapshot PATH [--output PATH]
@@ -51,6 +53,7 @@ Usage:
 
 Commands:
   auth         Authenticate with ClickUp and list accessible Workspaces
+  backup       Create and verify a portable ClickUp backup
   scan         Inventory one ClickUp Workspace without modifying it
   extract      Save an M3 raw ClickUp API snapshot without creating an archive
   export       Build an unverified M4 portable archive from an M3 snapshot
@@ -65,13 +68,32 @@ Flags:
   -h, --help   Show this help message
 `
 
+const backupHelpText = `ALIH creates a verified portable ClickUp backup.
+
+Usage:
+  alih backup [--workspace-id ID]
+
+If exactly one Workspace is accessible, it is selected automatically.
+If multiple Workspaces are accessible, --workspace-id is required.
+
+The default backup directory is ~/Alih/<workspace>/<UTC-start-time>/ and is
+never overwritten. It contains the sealed M4 archive in archive/ and the
+English Recovery Report in recovery-report.html. Keeping the report beside the
+sealed archive preserves independent M5 verification of the archive contents.
+
+Only VERIFIED and VERIFIED_WITH_LIMITATIONS are successful backup results.
+INCOMPLETE, FAILED, a failed stage, or an interruption exits non-zero and is
+never presented as a completed backup. ALIH uses ClickUp's official read-only
+API and does not modify source data.
+`
+
 const authHelpText = `Configure and verify local ClickUp authentication.
 
 Usage:
   alih auth
 
 For initial setup, provide ALIH_CLICKUP_TOKEN in the process environment.
-After successful verification, Alih saves it in the user configuration directory.
+After successful verification, ALIH saves it in the user configuration directory.
 Later runs load the saved credential when ALIH_CLICKUP_TOKEN is not set.
 The token is never accepted as a command-line argument.
 `
@@ -137,7 +159,7 @@ checksum, custom-field evidence, and disclosed discrepancies.
 Results:
   VERIFIED                    everything in supported scope was proven
   VERIFIED_WITH_LIMITATIONS   proven, with source limitations that remain
-  INCOMPLETE                  supported data Alih expected is not archived
+  INCOMPLETE                  supported data ALIH expected is not archived
   FAILED                      the archive could not be proven intact
 
 INCOMPLETE and FAILED exit non-zero.
@@ -163,7 +185,7 @@ Use --output - to write any format to stdout.
 The report is produced for a FAILED or INCOMPLETE archive too, and says so
 plainly. Those results exit non-zero.
 
-Note: PRD section 7 sketches report.html inside the archive directory. Alih
+Note: PRD section 7 sketches report.html inside the archive directory. ALIH
 writes it outside instead, because an M4 archive is sealed by manifest
 checksums and adding a file to it would make "alih verify" fail.
 `
@@ -186,6 +208,12 @@ type Options struct {
 	CredentialStore     credentialStore
 	EnvironmentToken    string
 	EnvironmentTokenSet bool
+	// BackupRoot overrides ~/Alih for tests or an explicitly embedded caller.
+	// The Alpha CLI deliberately exposes no output-location flag yet.
+	BackupRoot string
+	// Now supplies the backup-run start instant used only in the directory name.
+	// Archive provenance continues to come from the M3/M4 implementations.
+	Now func() time.Time
 }
 
 type archiveExporter interface {
@@ -222,6 +250,9 @@ func New(stdout, stderr io.Writer, logger *slog.Logger, options Options) *App {
 func (a *App) Run(args []string) int {
 	if len(args) > 0 && args[0] == "auth" {
 		return a.runAuth(args[1:])
+	}
+	if len(args) > 0 && args[0] == "backup" {
+		return a.runBackup(args[1:])
 	}
 	if len(args) > 0 && args[0] == "scan" {
 		return a.runScan(args[1:])
@@ -442,14 +473,14 @@ func (a *App) runVerify(args []string) int {
 		printVerification(a.stdout, report)
 	}
 	if report.Failed() {
-		fmt.Fprintf(a.stderr, "alih verify: archive result is %s; Alih cannot present this archive as verified\n", report.Result)
+		fmt.Fprintf(a.stderr, "alih verify: archive result is %s; ALIH cannot present this archive as verified\n", report.Result)
 		return 1
 	}
 	return 0
 }
 
 func printVerification(output io.Writer, report verify.Report) {
-	fmt.Fprintln(output, "ALI H — VERIFICATION")
+	fmt.Fprintln(output, "ALIH — VERIFICATION")
 	fmt.Fprintf(output, "\nArchive: %s\n", report.ArchivePath)
 	fmt.Fprintf(output, "Connector: %s\n", displayValue(report.Connector))
 	fmt.Fprintf(output, "Source workspace: %s (ID: %s)\n", displayValue(report.Source.Name), displayValue(report.Source.ID))
@@ -491,13 +522,13 @@ func printVerification(output io.Writer, report verify.Report) {
 	fmt.Fprintf(output, "\nRESULT\n\n%s\n\n", report.Result)
 	switch report.Result {
 	case verify.ResultVerified:
-		fmt.Fprintln(output, "Everything Alih expected within supported scope is archived and provable from this archive.")
+		fmt.Fprintln(output, "Everything ALIH expected within supported scope is archived and provable from this archive.")
 	case verify.ResultVerifiedWithLimitations:
 		fmt.Fprintln(output, "Supported archived data is provable from this archive; the limitations above remain and were not resolved by verification.")
 	case verify.ResultIncomplete:
-		fmt.Fprintln(output, "Alih expected supported data that this archive does not contain. This is not a verified archive.")
+		fmt.Fprintln(output, "ALIH expected supported data that this archive does not contain. This is not a verified archive.")
 	default:
-		fmt.Fprintln(output, "Alih cannot prove this archive is complete or intact.")
+		fmt.Fprintln(output, "ALIH cannot prove this archive is complete or intact.")
 	}
 	fmt.Fprintln(output, "Verification read the archive only. No source data modified. No archive data modified.")
 }
@@ -559,7 +590,7 @@ func (a *App) runExport(args []string) int {
 }
 
 func printArchiveSummary(output io.Writer, summary archive.Summary) {
-	fmt.Fprintln(output, "ALI H — PORTABLE ARCHIVE")
+	fmt.Fprintln(output, "ALIH — PORTABLE ARCHIVE")
 	fmt.Fprintf(output, "\nArchive: %s\n", summary.Path)
 	fmt.Fprintf(output, "Status: %s\n", summary.Status)
 	fmt.Fprintln(output, "Verification: NOT_RUN")
@@ -644,7 +675,7 @@ func (a *App) runExtract(args []string) int {
 		return a.failExtraction(session, err, fmt.Sprintf("alih extract: finalize raw snapshot: %v", err))
 	}
 
-	fmt.Fprintln(a.stdout, "ALI H — CLICKUP RAW EXTRACTION")
+	fmt.Fprintln(a.stdout, "ALIH — CLICKUP RAW EXTRACTION")
 	fmt.Fprintf(a.stdout, "\nWorkspace: %s (ID: %s)\n", displayValue(workspace.Name), displayValue(workspace.ID))
 	fmt.Fprintf(a.stdout, "Snapshot: %s\n", summary.Path)
 	fmt.Fprintf(a.stdout, "Logical inventory digest: %s\n", summary.LogicalDigest)
@@ -723,7 +754,7 @@ func (a *App) runScan(args []string) int {
 	result, err := a.options.Scanner.Scan(context.Background(), token, workspace)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
-		fmt.Fprintln(a.stderr, "alih scan: inventory FAILED; Alih cannot prove this source inventory is complete")
+		fmt.Fprintln(a.stderr, "alih scan: inventory FAILED; ALIH cannot prove this source inventory is complete")
 		return 1
 	}
 	if result.Workspace.ID != workspace.ID {
@@ -765,7 +796,7 @@ func selectWorkspace(workspaces []connector.Workspace, requestedID string) (conn
 
 func printScan(output io.Writer, result connector.ScanResult) {
 	inventory := result.Inventory
-	fmt.Fprintln(output, "ALI H — CLICKUP SCAN")
+	fmt.Fprintln(output, "ALIH — CLICKUP SCAN")
 	fmt.Fprintf(output, "\nWorkspace: %s (ID: %s)\n", displayValue(result.Workspace.Name), displayValue(result.Workspace.ID))
 	fmt.Fprintln(output, "Scope: data accessible to the authenticated user through ClickUp's official API.")
 	fmt.Fprintln(output, "\nHierarchy")

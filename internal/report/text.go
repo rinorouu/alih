@@ -28,7 +28,7 @@ import (
 func RenderText(output io.Writer, document Document) error {
 	writer := &textWriter{output: output}
 
-	writer.line("ALI H — RECOVERY REPORT")
+	writer.line("ALIH — RECOVERY REPORT")
 	writer.line("")
 	writer.line("Generated: %s (from archived evidence only; the source was not contacted)", document.GeneratedAt.Format("2006-01-02 15:04:05 UTC"))
 
