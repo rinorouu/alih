@@ -91,15 +91,28 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Configure MinGW
+      - name: Set up MSYS2 UCRT64
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Configure UCRT64 compiler
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
-          $mingw = "C:\msys64\mingw64\bin"
-          if (-not (Test-Path (Join-Path $mingw "gcc.exe"))) {
-            throw "The GitHub-hosted Windows runner does not contain the expected MinGW compiler."
+          $bin = Join-Path $env:MSYS2_LOCATION "ucrt64\bin"
+          $cc = Join-Path $bin "gcc.exe"
+          if (-not (Test-Path $cc)) {
+            throw "MSYS2 UCRT64 GCC was not installed at the expected location."
           }
-          $mingw | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "CC=$cc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Verify native CGO target
         if: runner.os != 'Windows'
