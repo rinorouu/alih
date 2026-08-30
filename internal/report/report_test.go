@@ -450,7 +450,7 @@ func TestReportEscapesArchivedSourceContentInHTML(t *testing.T) {
 	t.Parallel()
 
 	inputs := healthyInputs()
-	inputs.Verification.Source.Name = `Demeter <script>alert(1)</script>`
+	inputs.Verification.Source.Name = `Example Workspace <script>alert(1)</script>`
 	inputs.Manifest.Source.Name = inputs.Verification.Source.Name
 	var html bytes.Buffer
 	if err := RenderHTML(&html, Build(inputs)); err != nil {
@@ -459,7 +459,7 @@ func TestReportEscapesArchivedSourceContentInHTML(t *testing.T) {
 	if strings.Contains(html.String(), "<script>alert(1)</script>") {
 		t.Fatal("archived source content was rendered as HTML markup")
 	}
-	if !strings.Contains(html.String(), "Demeter") {
+	if !strings.Contains(html.String(), "Example Workspace") {
 		t.Fatal("the workspace name was lost instead of escaped")
 	}
 }
