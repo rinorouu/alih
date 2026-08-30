@@ -33,9 +33,12 @@ type EvidenceResponse struct {
 // Evidence contains the validated M3 control metadata needed by an M4 source
 // adapter. It is input evidence, not a portable model.
 type Evidence struct {
-	RootPath      string
-	Connector     string
-	Workspace     connector.Workspace
+	RootPath  string
+	Connector string
+	Workspace connector.Workspace
+	// ExtractedBy is the authenticated account that produced the snapshot. It
+	// is empty for snapshots written before Alih recorded it.
+	ExtractedBy   connector.Identity
 	StartedAt     time.Time
 	FinishedAt    time.Time
 	LogicalDigest string
@@ -134,10 +137,15 @@ func LoadComplete(rootPath string) (Evidence, error) {
 		return Evidence{}, errors.New("raw snapshot request summary does not match request ledger")
 	}
 
+	var extractedBy connector.Identity
+	if run.ExtractedBy != nil {
+		extractedBy = connector.Identity{ID: run.ExtractedBy.ID, Name: run.ExtractedBy.Name}
+	}
 	return Evidence{
 		RootPath: absolute, Connector: run.Connector,
-		Workspace: connector.Workspace{ID: run.Source.WorkspaceID, Name: run.Source.WorkspaceName},
-		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, LogicalDigest: digest,
+		Workspace:   connector.Workspace{ID: run.Source.WorkspaceID, Name: run.Source.WorkspaceName},
+		ExtractedBy: extractedBy,
+		StartedAt:   run.StartedAt, FinishedAt: run.FinishedAt, LogicalDigest: digest,
 		Inventory: inventory.Counts, Capabilities: append([]connector.Capability(nil), inventory.Capabilities...),
 		SourceObjects: objects, Responses: responses,
 	}, nil

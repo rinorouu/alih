@@ -30,6 +30,10 @@ type Identity struct {
 	Connector     string `json:"connector"`
 	WorkspaceID   string `json:"workspace_id"`
 	WorkspaceName string `json:"workspace_name"`
+	// ExtractedByID and ExtractedByName name the account whose access this
+	// archive represents. An archive is one identity's view of the source.
+	ExtractedByID   string `json:"extracted_by_id,omitempty"`
+	ExtractedByName string `json:"extracted_by_name,omitempty"`
 	// SourceSnapshotCompletedAt is when the source was read; ArchiveCompletedAt
 	// is when this artifact was finished. They are separate questions and the
 	// report answers them separately rather than presenting one as the other.
@@ -231,6 +235,10 @@ func buildIdentity(inputs Inputs) Identity {
 		identity.ArchiveCompletedAt = &completed
 	}
 	identity.CompletionLag = completionLag(identity.SourceSnapshotCompletedAt, identity.ArchiveCompletedAt)
+	if manifest.ExtractedBy != nil {
+		identity.ExtractedByID = manifest.ExtractedBy.ID
+		identity.ExtractedByName = manifest.ExtractedBy.Name
+	}
 	identity.RecordedStatus = manifest.Status
 	identity.CreatedByAlihVersion = manifest.AlihVersion
 	identity.ArchiveSchemaVersion = manifest.SchemaVersion

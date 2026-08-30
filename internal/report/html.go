@@ -52,6 +52,7 @@ footer { margin-top: 3rem; font-size: .85rem; opacity: .75; }
 <dt>Archive</dt><dd class="mono">{{.Identity.ArchivePath}}</dd>
 <dt>Connector</dt><dd>{{orUnknown .Identity.Connector}}</dd>
 <dt>Source workspace</dt><dd>{{orUnknown .Identity.WorkspaceName}} <span class="mono">(ID: {{orUnknown .Identity.WorkspaceID}})</span></dd>
+<dt>Extracted by</dt><dd>{{if .Identity.ExtractedByID}}{{orUnknown .Identity.ExtractedByName}} <span class="mono">(ID: {{.Identity.ExtractedByID}})</span>{{else}}<span class="bad">not recorded: this archive does not name the account that produced it</span>{{end}}<br><span class="finding">This archive holds what that account could reach through the official API. Whether that is the entire Workspace is not established.</span></dd>
 <dt>Source read completed</dt><dd>{{if .Identity.SourceSnapshotCompletedAt}}{{.Identity.SourceSnapshotCompletedAt.Format "2006-01-02 15:04:05 UTC"}}{{else}}not recorded by this archive{{end}}</dd>
 <dt>Archive completed</dt><dd>{{if .Identity.ArchiveCompletedAt}}{{.Identity.ArchiveCompletedAt.Format "2006-01-02 15:04:05 UTC"}}{{if .Identity.CompletionLag}}<br><span class="finding">{{.Identity.CompletionLag}}</span>{{end}}{{else}}<span class="bad">not recorded: this archive states no completion time</span>{{end}}</dd>
 <dt>Created by</dt><dd>Alih {{orUnknown .Identity.CreatedByAlihVersion}}</dd>

@@ -15,8 +15,8 @@ type Connector interface {
 
 // Identity is the authenticated account reported by a source connector.
 type Identity struct {
-	ID   string
-	Name string
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Workspace is a source workspace accessible to the authenticated identity.

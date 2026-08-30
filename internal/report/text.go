@@ -23,6 +23,12 @@ func RenderText(output io.Writer, document Document) error {
 	writer.field("Archive", identity.ArchivePath)
 	writer.field("Connector", orUnknown(identity.Connector))
 	writer.field("Source workspace", fmt.Sprintf("%s (ID: %s)", orUnknown(identity.WorkspaceName), orUnknown(identity.WorkspaceID)))
+	if identity.ExtractedByID != "" {
+		writer.field("Extracted by", fmt.Sprintf("%s (ID: %s)", orUnknown(identity.ExtractedByName), identity.ExtractedByID))
+	} else {
+		writer.field("Extracted by", "not recorded: this archive does not name the account that produced it")
+	}
+	writer.wrap("      ", "This archive holds what that account could reach through the official API. Whether that is the entire Workspace is not established.")
 	if identity.SourceSnapshotCompletedAt != nil {
 		writer.field("Source read completed", identity.SourceSnapshotCompletedAt.Format("2006-01-02 15:04:05 UTC"))
 	} else {

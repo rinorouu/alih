@@ -535,6 +535,31 @@ func (v *verification) checkSourceConsistencyScope(database *portableDatabase, m
 	v.pass("source_consistency_scope", "the source snapshot this archive was built from is recorded as atomic")
 }
 
+// checkAccessScopeCompleteness addresses PRD section 22's "authentication scope
+// insufficient and undetected". A narrower credential simply returns fewer
+// objects, and those fewer objects then reconcile perfectly against each other,
+// so no archive-internal evidence can distinguish a complete Workspace from a
+// partial one. Alih therefore makes the condition permanently
+// detected-as-undetectable: the claim can never be established, so it can never
+// be silently absent from a clean VERIFIED result.
+func (v *verification) checkAccessScopeCompleteness(manifest archive.Manifest) {
+	identity := "an account this archive does not name"
+	if manifest.ExtractedBy != nil && strings.TrimSpace(manifest.ExtractedBy.ID) != "" {
+		identity = fmt.Sprintf("%s (id %s)", manifest.ExtractedBy.Name, manifest.ExtractedBy.ID)
+	}
+	findings := []string{
+		"This archive contains what " + identity + " could reach through the official API.",
+		"A credential with narrower permissions returns fewer objects, and those fewer objects reconcile perfectly with each other, so archive-internal evidence cannot tell a complete Workspace from a partial one.",
+		"Establishing this would require re-reading the source under a wider credential, which is outside what verifying an archive can do.",
+	}
+	if manifest.ExtractedBy == nil {
+		findings = append(findings, "This archive does not record which account extracted it, so its access scope cannot even be attributed.")
+	}
+	v.unproven("access_scope_completeness",
+		"Whether the credential used for this extraction could see the entire Workspace is not established, and cannot be established from the archive alone.",
+		findings)
+}
+
 // checkLimitationPreservation keeps source limitations exactly as the source
 // connector reported them. Passing verification never upgrades a PARTIAL,
 // UNSUPPORTED, UNAVAILABLE or UNKNOWN capability.

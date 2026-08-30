@@ -18,7 +18,7 @@ func TestNormalizeSnapshotProducesDeterministicPortableModelWithSourceIDs(t *tes
 	client := fixtureClient(t, fixture.roundTrip)
 	workspace := connector.Workspace{ID: "w1", Name: "Portable Test"}
 	target := filepath.Join(t.TempDir(), "m3")
-	session, err := snapshot.Begin(target, "clickup", workspace, fixture.token)
+	session, err := snapshot.Begin(target, "clickup", workspace, connector.Identity{ID: "u1", Name: "Portable User"}, fixture.token)
 	if err != nil {
 		t.Fatal(err)
 	}

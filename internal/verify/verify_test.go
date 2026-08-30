@@ -26,7 +26,10 @@ func TestVerifyHealthyArchiveIsProvenWithoutModifyingIt(t *testing.T) {
 	}
 	// Only the two claims that archived evidence genuinely cannot establish
 	// may be anything other than a pass.
-	unproven := map[string]bool{"source_consistency_scope": true, "limitation_preservation": true}
+	unproven := map[string]bool{
+		"source_consistency_scope": true, "limitation_preservation": true,
+		"access_scope_completeness": true,
+	}
 	for _, check := range report.Checks {
 		if unproven[check.Name] {
 			if check.Status != CheckUnproven {
@@ -420,5 +423,28 @@ func TestVerifyRejectsAnArchiveThatPointsOutsideItself(t *testing.T) {
 	}
 	if check := checkStatus(t, report, "archive_structure"); check.Status != CheckFail {
 		t.Fatalf("archive_structure = %s %v", check.Status, check.Findings)
+	}
+}
+
+func TestVerifyNeverEstablishesAccessScopeCompleteness(t *testing.T) {
+	t.Parallel()
+
+	// PRD section 22 requires that an insufficient and undetected credential
+	// scope cannot produce a clean VERIFIED result. No archive-internal
+	// evidence can detect it, so the claim must be permanently unproven.
+	report := verifyFixture(t, buildFixtureArchive(t, http.StatusOK))
+
+	check := checkStatus(t, report, "access_scope_completeness")
+	if check.Status != CheckUnproven {
+		t.Fatalf("access_scope_completeness = %s, want %s", check.Status, CheckUnproven)
+	}
+	if report.Result == ResultVerified {
+		t.Fatal("an archive reached a clean VERIFIED without establishing its access scope")
+	}
+	if !containsSubstring(check.Findings, "Fixture User") || !containsSubstring(check.Findings, "u1") {
+		t.Errorf("the archive's access scope was not attributed to the extracting account: %#v", check.Findings)
+	}
+	if !containsSubstring(report.NotProven, "could see the entire Workspace") {
+		t.Errorf("the access scope limitation is missing from the unproven claims: %#v", report.NotProven)
 	}
 }
