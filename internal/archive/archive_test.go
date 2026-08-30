@@ -87,10 +87,18 @@ func TestBuildCreatesDeterministicSQLiteManifestSchemaRawAndAttachment(t *testin
 	})
 	evidence, portable := archiveFixture(t, "https://attachments.example/download?signature=private", int64(len(content)))
 
+	buildTimes := []time.Time{
+		time.Date(2026, 8, 30, 2, 32, 15, 0, time.UTC),
+		time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC),
+	}
 	var outputs []string
 	for run := 0; run < 2; run++ {
+		buildTime := buildTimes[run]
 		target := filepath.Join(t.TempDir(), "alih-export")
-		summary, err := Build(context.Background(), evidence, portable, target, Options{HTTPClient: client, Credential: "clickup-token"})
+		summary, err := Build(context.Background(), evidence, portable, target, Options{
+			HTTPClient: client, Credential: "clickup-token",
+			Now: func() time.Time { return buildTime },
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,6 +128,27 @@ func TestBuildCreatesDeterministicSQLiteManifestSchemaRawAndAttachment(t *testin
 		if manifest.Status != StatusCreatedUnverified || manifest.Verification.Status != "NOT_RUN" || manifest.Inventory["attachments"].Archived != 1 || len(manifest.Discrepancies) != 0 {
 			t.Fatalf("manifest = %#v", manifest)
 		}
+		if manifest.SchemaVersion != ArchiveSchemaVersion {
+			t.Fatalf("manifest schema_version = %d, want %d", manifest.SchemaVersion, ArchiveSchemaVersion)
+		}
+		// The two instants describe different events and must not be conflated.
+		if !manifest.SourceSnapshotCompletedAt.Equal(evidence.FinishedAt) {
+			t.Errorf("source_snapshot_completed_at = %s, want the M3 finish time %s", manifest.SourceSnapshotCompletedAt, evidence.FinishedAt)
+		}
+		if manifest.ArchiveCompletedAt == nil || !manifest.ArchiveCompletedAt.Equal(buildTime) {
+			t.Fatalf("archive_completed_at = %v, want the observed build instant %s", manifest.ArchiveCompletedAt, buildTime)
+		}
+		if manifest.ArchiveCompletedAt.Equal(manifest.SourceSnapshotCompletedAt) {
+			t.Error("the archive completion time was taken from the source snapshot instead of being observed")
+		}
+		// It must be an observed instant, never a filesystem timestamp.
+		info, err := os.Stat(filepath.Join(target, "alih.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if manifest.ArchiveCompletedAt.Equal(info.ModTime().UTC()) {
+			t.Error("the archive completion time was derived from filesystem mtime")
+		}
 		database, err := sql.Open("sqlite3", filepath.Join(target, "alih.db"))
 		if err != nil {
 			t.Fatal(err)
@@ -134,13 +163,40 @@ func TestBuildCreatesDeterministicSQLiteManifestSchemaRawAndAttachment(t *testin
 		}
 		outputs = append(outputs, target)
 	}
-	for _, name := range []string{"alih.db", "schema.json", "manifest.json"} {
+	for _, name := range []string{"alih.db", "schema.json"} {
 		first, _ := os.ReadFile(filepath.Join(outputs[0], name))
 		second, _ := os.ReadFile(filepath.Join(outputs[1], name))
 		if !bytes.Equal(first, second) {
 			t.Errorf("%s differs for identical source evidence", name)
 		}
 	}
+	// manifest.json must still be reproducible apart from the single field that
+	// records when the archive was built. Neutralising only that field proves it
+	// is the sole source of variation, including the file checksums it feeds.
+	firstManifest, _ := os.ReadFile(filepath.Join(outputs[0], "manifest.json"))
+	secondManifest, _ := os.ReadFile(filepath.Join(outputs[1], "manifest.json"))
+	if bytes.Equal(firstManifest, secondManifest) {
+		t.Fatal("two builds recorded the same archive completion time")
+	}
+	if !bytes.Equal(withoutCompletionTime(t, firstManifest), withoutCompletionTime(t, secondManifest)) {
+		t.Error("manifest.json differs for identical source evidence beyond the archive completion time")
+	}
+}
+
+// withoutCompletionTime removes the one field that legitimately varies between
+// builds so the rest of the manifest can be compared byte for byte.
+func withoutCompletionTime(t *testing.T, content []byte) []byte {
+	t.Helper()
+	var document map[string]any
+	if err := json.Unmarshal(content, &document); err != nil {
+		t.Fatal(err)
+	}
+	delete(document, "archive_completed_at")
+	normalized, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return normalized
 }
 
 func TestBuildMarksAttachmentFailureIncompleteWithoutSilentOmission(t *testing.T) {
@@ -215,6 +271,12 @@ func TestBuildFailsClosedOnBrokenRelationship(t *testing.T) {
 	readJSON(t, filepath.Join(summary.Path, "manifest.json"), &manifest)
 	if manifest.Status != StatusFailed || manifest.Verification.Status != "NOT_RUN" {
 		t.Fatalf("failed manifest = %#v", manifest)
+	}
+	if manifest.ArchiveCompletedAt != nil {
+		t.Errorf("an archive that was never completed recorded a completion time: %s", manifest.ArchiveCompletedAt)
+	}
+	if manifest.SourceSnapshotCompletedAt.IsZero() {
+		t.Error("a failed archive lost the source snapshot instant it was built from")
 	}
 }
 

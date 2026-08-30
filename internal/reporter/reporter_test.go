@@ -24,6 +24,8 @@ func (stub *stubVerifier) Verify(path string) (verify.Report, error) {
 	return stub.report, stub.err
 }
 
+var completedAt = time.Date(2026, 8, 30, 1, 30, 0, 0, time.UTC)
+
 func writeManifest(t *testing.T, directory string, manifest archive.Manifest) {
 	t.Helper()
 	content, err := json.MarshalIndent(manifest, "", "  ")
@@ -46,8 +48,9 @@ func TestReportCombinesArchiveEvidenceWithVerification(t *testing.T) {
 
 	directory := t.TempDir()
 	writeManifest(t, directory, archive.Manifest{
-		SchemaVersion: 1, AlihVersion: "0.0.1", Status: archive.StatusCreatedUnverified,
-		CreatedAt: time.Date(2026, 8, 30, 1, 0, 0, 0, time.UTC), Connector: "clickup",
+		SchemaVersion: archive.ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: archive.StatusCreatedUnverified,
+		SourceSnapshotCompletedAt: time.Date(2026, 8, 30, 1, 0, 0, 0, time.UTC),
+		ArchiveCompletedAt:        &completedAt, Connector: "clickup",
 		Source:        connector.Workspace{ID: "w1", Name: "Example"},
 		InputSnapshot: archive.InputSnapshot{LogicalDigest: "sha256:abc", Atomic: false},
 		Files:         []archive.FileRecord{{Path: "alih.db"}},
@@ -68,7 +71,7 @@ func TestReportCombinesArchiveEvidenceWithVerification(t *testing.T) {
 	if !document.Identity.ManifestReadable {
 		t.Fatal("a readable manifest was reported as unreadable")
 	}
-	if document.Identity.CreatedAt == nil || document.Identity.RecordedFiles != 1 {
+	if document.Identity.SourceSnapshotCompletedAt == nil || document.Identity.ArchiveCompletedAt == nil || document.Identity.RecordedFiles != 1 {
 		t.Fatalf("identity = %#v", document.Identity)
 	}
 	if document.Conclusion.Result != verify.ResultVerifiedWithLimitations {
@@ -113,7 +116,7 @@ func TestReportDoesNotWriteToTheArchive(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	writeManifest(t, directory, archive.Manifest{SchemaVersion: 1, Status: archive.StatusCreatedUnverified})
+	writeManifest(t, directory, archive.Manifest{SchemaVersion: archive.ArchiveSchemaVersion, Status: archive.StatusCreatedUnverified})
 	before, err := os.ReadDir(directory)
 	if err != nil {
 		t.Fatal(err)
