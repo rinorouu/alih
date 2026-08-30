@@ -153,12 +153,19 @@ turn unavailable source data into supported data.
 
 The Alpha has no web or desktop UI, Alih cloud backend, billing, telemetry,
 scheduled backups, continuous sync, restore workflow, cross-SaaS migration,
-production OAuth onboarding, or additional connector.
+production OAuth onboarding, or additional connectors.
 
-Alih OSS is software that users may run themselves. The maintainers may choose
-to build an optional managed service on top of the open-source core in the
-future. This is a boundary, not a promise of availability, features, pricing,
-or a change to the current Alpha scope.
+## Run Alih yourself
+
+Alih is open-source software that users may build and run themselves. The
+current Alpha workflow does not require an Alih-hosted service.
+
+## Alih Assistance
+
+Users who prefer not to operate Alih themselves may be able to use paid Alih
+Assistance in the future, where the maintainers operate the same open-source
+software on their behalf. Assistance would be optional and would not restrict
+the self-run open-source core. No availability or pricing is promised here.
 
 ## Development
 
@@ -167,9 +174,6 @@ go test ./...
 go test -race ./...
 go vet ./...
 ```
-
-`AGENTS.md` describes how changes to this repository are expected to be made.
-`PRD.md` is the product source of truth; code does not redefine it.
 
 ## License
 
