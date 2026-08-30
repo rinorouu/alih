@@ -42,6 +42,14 @@ type sourceDescriptor struct {
 	WorkspaceName string `json:"workspace_name"`
 }
 
+// identityRecord names the authenticated account whose access produced this
+// extraction. An archive is always one identity's view of the source, and
+// recording which one is the only part of that Alih can establish.
+type identityRecord struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type requestSummary struct {
 	Attempts            int `json:"attempts"`
 	SuccessfulResponses int `json:"successful_responses"`
@@ -57,6 +65,7 @@ type runRecord struct {
 	Source        sourceDescriptor  `json:"source"`
 	StartedAt     time.Time         `json:"started_at"`
 	FinishedAt    time.Time         `json:"finished_at"`
+	ExtractedBy   *identityRecord   `json:"extracted_by,omitempty"`
 	Requests      requestSummary    `json:"requests"`
 	Consistency   consistencyRecord `json:"source_consistency"`
 	LogicalDigest string            `json:"logical_inventory_digest,omitempty"`
@@ -103,6 +112,7 @@ type Session struct {
 	stagingPath   string
 	connectorName string
 	workspace     connector.Workspace
+	identity      connector.Identity
 	secrets       []string
 	startedAt     time.Time
 	records       []requestRecord
@@ -111,9 +121,11 @@ type Session struct {
 }
 
 // Begin creates a private staging area. targetPath must not already exist.
-// secrets are held only in memory and used to reject or redact accidental
-// credential exposure; they are never written to the snapshot.
-func Begin(targetPath, connectorName string, workspace connector.Workspace, secrets ...string) (*Session, error) {
+// identity is the authenticated account performing the extraction; it is
+// recorded so the archive states whose access it represents. secrets are held
+// only in memory and used to reject or redact accidental credential exposure;
+// they are never written to the snapshot.
+func Begin(targetPath, connectorName string, workspace connector.Workspace, identity connector.Identity, secrets ...string) (*Session, error) {
 	if strings.TrimSpace(targetPath) == "" {
 		return nil, errors.New("raw snapshot output path is required")
 	}
@@ -152,7 +164,11 @@ func Begin(targetPath, connectorName string, workspace connector.Workspace, secr
 	}
 	session := &Session{
 		targetPath: absolute, stagingPath: staging, connectorName: connectorName,
-		workspace: workspace, secrets: filteredSecrets, startedAt: time.Now().UTC(),
+		workspace: workspace, identity: identity, secrets: filteredSecrets, startedAt: time.Now().UTC(),
+	}
+	if session.containsSecret([]byte(identity.ID + "\x00" + identity.Name)) {
+		_ = os.RemoveAll(staging)
+		return nil, errors.New("authenticated identity contains a configured credential")
 	}
 	if session.containsSecret([]byte(connectorName + "\x00" + workspace.ID + "\x00" + workspace.Name)) {
 		_ = os.RemoveAll(staging)
@@ -308,11 +324,18 @@ func (session *Session) Fail(reason error) (string, error) {
 }
 
 func (session *Session) runRecord(status string, finishedAt time.Time, requests requestSummary) runRecord {
+	var extractedBy *identityRecord
+	if strings.TrimSpace(session.identity.ID) != "" {
+		extractedBy = &identityRecord{
+			ID: session.redact(session.identity.ID), Name: session.redact(session.identity.Name),
+		}
+	}
 	return runRecord{
 		SchemaVersion: schemaVersion, Kind: "raw_extraction_run", Status: status,
-		Connector: session.connectorName,
-		Source:    sourceDescriptor{WorkspaceID: session.redact(session.workspace.ID), WorkspaceName: session.redact(session.workspace.Name)},
-		StartedAt: session.startedAt, FinishedAt: finishedAt, Requests: requests,
+		Connector:   session.connectorName,
+		ExtractedBy: extractedBy,
+		Source:      sourceDescriptor{WorkspaceID: session.redact(session.workspace.ID), WorkspaceName: session.redact(session.workspace.Name)},
+		StartedAt:   session.startedAt, FinishedAt: finishedAt, Requests: requests,
 		Consistency: consistencyRecord{
 			Atomic: false,
 			Note:   "ClickUp does not provide an atomic snapshot; source changes during traversal can produce a failed or time-skewed extraction.",

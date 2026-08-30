@@ -612,7 +612,7 @@ func (a *App) runExtract(args []string) int {
 		}
 	}
 
-	session, err := snapshot.Begin(*outputPath, a.options.Extractor.Name(), workspace, token)
+	session, err := snapshot.Begin(*outputPath, a.options.Extractor.Name(), workspace, authentication.Identity, token)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "alih extract: create raw snapshot: %v\n", err)
 		return 1

@@ -82,18 +82,22 @@ type Manifest struct {
 	// derived from filesystem timestamps, and is null when the archive was
 	// never completed. It is the one field that legitimately differs between
 	// two archives built from identical evidence.
-	ArchiveCompletedAt *time.Time             `json:"archive_completed_at"`
-	Connector          string                 `json:"connector"`
-	Source             connector.Workspace    `json:"source"`
-	InputSnapshot      InputSnapshot          `json:"input_snapshot"`
-	Inventory          map[string]EntityCount `json:"inventory"`
-	Observed           map[string]int         `json:"observed_entities"`
-	Capabilities       []connector.Capability `json:"capabilities"`
-	Attachments        []AttachmentRecord     `json:"attachments"`
-	Files              []FileRecord           `json:"files"`
-	Limitations        []string               `json:"limitations"`
-	Discrepancies      []Discrepancy          `json:"discrepancies"`
-	Verification       VerificationState      `json:"verification"`
+	ArchiveCompletedAt *time.Time          `json:"archive_completed_at"`
+	Connector          string              `json:"connector"`
+	Source             connector.Workspace `json:"source"`
+	// ExtractedBy names the authenticated account whose access produced this
+	// archive. The archive is that identity's view of the source and nothing
+	// wider; it is absent for snapshots taken before Alih recorded it.
+	ExtractedBy   *connector.Identity    `json:"extracted_by,omitempty"`
+	InputSnapshot InputSnapshot          `json:"input_snapshot"`
+	Inventory     map[string]EntityCount `json:"inventory"`
+	Observed      map[string]int         `json:"observed_entities"`
+	Capabilities  []connector.Capability `json:"capabilities"`
+	Attachments   []AttachmentRecord     `json:"attachments"`
+	Files         []FileRecord           `json:"files"`
+	Limitations   []string               `json:"limitations"`
+	Discrepancies []Discrepancy          `json:"discrepancies"`
+	Verification  VerificationState      `json:"verification"`
 }
 
 type InputSnapshot struct {
@@ -396,6 +400,16 @@ func markAttachmentUnresolved(attachment *model.Attachment, message string) {
 	attachment.Error = stringPointer(message)
 }
 
+// extractedIdentity carries the extracting account forward when the snapshot
+// recorded one. It is never invented when the snapshot did not.
+func extractedIdentity(evidence snapshot.Evidence) *connector.Identity {
+	if strings.TrimSpace(evidence.ExtractedBy.ID) == "" {
+		return nil
+	}
+	identity := evidence.ExtractedBy
+	return &identity
+}
+
 func clock(options Options) func() time.Time {
 	if options.Now != nil {
 		return options.Now
@@ -443,7 +457,7 @@ func buildManifest(staging string, evidence snapshot.Evidence, portable model.Ar
 	return Manifest{
 		SchemaVersion: ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: status,
 		SourceSnapshotCompletedAt: evidence.FinishedAt, ArchiveCompletedAt: completedAt,
-		Connector: evidence.Connector, Source: evidence.Workspace,
+		Connector: evidence.Connector, Source: evidence.Workspace, ExtractedBy: extractedIdentity(evidence),
 		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, Status: "COMPLETE", Atomic: false},
 		Inventory:     inventory,
 		Observed: map[string]int{
@@ -506,7 +520,7 @@ func preserveFailedArchive(staging, target string, evidence snapshot.Evidence, p
 		// instant rather than borrowing one from the source snapshot.
 		SchemaVersion: ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: StatusFailed,
 		SourceSnapshotCompletedAt: evidence.FinishedAt, ArchiveCompletedAt: nil,
-		Connector: evidence.Connector, Source: evidence.Workspace,
+		Connector: evidence.Connector, Source: evidence.Workspace, ExtractedBy: extractedIdentity(evidence),
 		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, Status: "COMPLETE", Atomic: false},
 		Capabilities:  append([]connector.Capability(nil), portable.Capabilities...),
 		Limitations:   append([]string(nil), portable.Limitations...),

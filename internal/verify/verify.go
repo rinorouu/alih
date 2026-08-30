@@ -214,9 +214,11 @@ func Archive(path string, options Options) (Report, error) {
 	}
 	if manifestOK {
 		v.checkSourceConsistencyScope(database, manifest, databaseOK)
+		v.checkAccessScopeCompleteness(manifest)
 		v.checkLimitationPreservation(manifest)
 	} else {
 		v.notEvaluated("source_consistency_scope", "source consistency scope was not evaluated because manifest.json could not be read")
+		v.notEvaluated("access_scope_completeness", "access scope was not evaluated because manifest.json could not be read")
 		v.notEvaluated("limitation_preservation", "source limitations were not evaluated because manifest.json could not be read")
 	}
 

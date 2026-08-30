@@ -12,6 +12,8 @@ import (
 	"alih/internal/connector"
 )
 
+var testIdentity = connector.Identity{ID: "u1", Name: "Extracting User"}
+
 func testExtractionResult(workspace connector.Workspace, reversed bool) connector.ExtractionResult {
 	objects := []connector.SourceObject{
 		{Type: "workspace", ID: workspace.ID},
@@ -37,7 +39,7 @@ func TestCompletePreservesExactRawResponseAndStableLogicalDigest(t *testing.T) {
 	var digests []string
 	for run := 0; run < 2; run++ {
 		target := filepath.Join(t.TempDir(), "raw-run")
-		session, err := Begin(target, "clickup", workspace, "private-token")
+		session, err := Begin(target, "clickup", workspace, testIdentity, "private-token")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +81,7 @@ func TestCompletePreservesExactRawResponseAndStableLogicalDigest(t *testing.T) {
 func TestBeginMarksUnfinishedStagingAsInProgress(t *testing.T) {
 	t.Parallel()
 
-	session, err := Begin(filepath.Join(t.TempDir(), "raw-run"), "clickup", connector.Workspace{ID: "w1", Name: "Test"}, "secret")
+	session, err := Begin(filepath.Join(t.TempDir(), "raw-run"), "clickup", connector.Workspace{ID: "w1", Name: "Test"}, testIdentity, "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +97,7 @@ func TestLoadCompleteRejectsCorruptRawEvidence(t *testing.T) {
 
 	workspace := connector.Workspace{ID: "workspace-1", Name: "Test"}
 	target := filepath.Join(t.TempDir(), "raw-run")
-	session, err := Begin(target, "clickup", workspace, "secret")
+	session, err := Begin(target, "clickup", workspace, testIdentity, "secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +126,7 @@ func TestCredentialInRawResponseIsOmittedAndFailedEvidenceIsPreserved(t *testing
 
 	const token = "private-token-that-must-not-be-written"
 	target := filepath.Join(t.TempDir(), "raw-run")
-	session, err := Begin(target, "clickup", connector.Workspace{ID: "w1", Name: "Test"}, token)
+	session, err := Begin(target, "clickup", connector.Workspace{ID: "w1", Name: "Test"}, testIdentity, token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +161,7 @@ func TestFailedTraversalAccountsForRetriesAndKeepsPartialEvidence(t *testing.T) 
 	t.Parallel()
 
 	target := filepath.Join(t.TempDir(), "raw-run")
-	session, err := Begin(target, "clickup", connector.Workspace{ID: "w1", Name: "Test"}, "secret")
+	session, err := Begin(target, "clickup", connector.Workspace{ID: "w1", Name: "Test"}, testIdentity, "secret")
 	if err != nil {
 		t.Fatal(err)
 	}

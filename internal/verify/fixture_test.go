@@ -103,7 +103,7 @@ func buildFixtureArchive(t *testing.T, attachmentStatus int) string {
 	t.Helper()
 	root := t.TempDir()
 	snapshotPath := filepath.Join(root, "m3")
-	session, err := snapshot.Begin(snapshotPath, "clickup", connector.Workspace{ID: "w1", Name: "Fixture Workspace"})
+	session, err := snapshot.Begin(snapshotPath, "clickup", connector.Workspace{ID: "w1", Name: "Fixture Workspace"}, connector.Identity{ID: "u1", Name: "Fixture User"})
 	if err != nil {
 		t.Fatal(err)
 	}
