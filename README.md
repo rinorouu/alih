@@ -161,5 +161,5 @@ is licensed to be genuinely usable: you may run, modify, and redistribute it,
 commercially or not. Apache-2.0 adds an explicit patent grant and requires that
 attribution and change notices survive in forks, which MIT does not.
 
-Copyright 2026 rinorouu. The sole copyright holder may license future versions
+Copyright 2025 rinorouu. The sole copyright holder may license future versions
 differently; that does not affect the rights granted here.
