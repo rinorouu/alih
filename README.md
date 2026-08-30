@@ -154,4 +154,12 @@ go vet ./...
 
 ## License
 
-Not yet licensed. All rights reserved pending a decision after V0.
+[Apache License 2.0](LICENSE).
+
+Alih is a tool for getting your own data out of somebody else's system, so it
+is licensed to be genuinely usable: you may run, modify, and redistribute it,
+commercially or not. Apache-2.0 adds an explicit patent grant and requires that
+attribution and change notices survive in forks, which MIT does not.
+
+Copyright 2026 rinorouu. The sole copyright holder may license future versions
+differently; that does not affect the rights granted here.
