@@ -27,7 +27,10 @@ import (
 	"alih/internal/connector"
 )
 
-const (
+// Pagination bounds stop a traversal that never terminates. They are variables
+// rather than constants only so that the fail-closed behaviour at the bound can
+// be tested; nothing outside tests changes them.
+var (
 	maxTaskPages    = 100000
 	maxCommentPages = 100000
 )
