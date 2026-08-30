@@ -670,6 +670,9 @@ func (a *App) failExtraction(session *snapshot.Session, reason error, headline s
 	return 1
 }
 
+// safeError renders an error for the operator without trusting its producer to
+// have removed the credential. Connectors sanitise their own errors; this is
+// the boundary that makes a lapse there harmless.
 func safeError(err error, secret string) string {
 	if err == nil {
 		return ""
@@ -708,18 +711,18 @@ func (a *App) runScan(args []string) int {
 	}
 	authentication, err := a.options.Authenticator.Authenticate(context.Background(), token)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "alih scan: %v\n", err)
+		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
 		return 1
 	}
 	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID))
 	if err != nil {
-		fmt.Fprintf(a.stderr, "alih scan: %v\n", err)
+		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
 		return 1
 	}
 
 	result, err := a.options.Scanner.Scan(context.Background(), token, workspace)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "alih scan: %v\n", err)
+		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
 		fmt.Fprintln(a.stderr, "alih scan: inventory FAILED; Alih cannot prove this source inventory is complete")
 		return 1
 	}
@@ -809,7 +812,7 @@ func (a *App) runAuth(args []string) int {
 
 	result, err := a.options.Authenticator.Authenticate(context.Background(), token)
 	if err != nil {
-		fmt.Fprintf(a.stderr, "alih auth: %v\n", err)
+		fmt.Fprintf(a.stderr, "alih auth: %s\n", safeError(err, token))
 		return 1
 	}
 

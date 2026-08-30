@@ -229,6 +229,7 @@ func normalizeHierarchy(portable *model.Archive, provider string, objects []conn
 }
 
 func normalizeTasks(portable *model.Archive, provider string, objects []connector.SourceObject, tasks map[string]taskEvidence, fields map[string]fieldEvidence, identities map[string]model.Identity) error {
+	records := recordObjectIndex(objects)
 	for _, object := range objects {
 		if object.Type != "task" && object.Type != "subtask" {
 			continue
@@ -273,7 +274,7 @@ func normalizeTasks(portable *model.Archive, provider string, objects []connecto
 		} else {
 			parent := model.PortableID(provider, "task", object.ParentID)
 			record.ParentRecordID = &parent
-			collectionSourceID, err := taskCollectionSourceID(objects, object.ID, make(map[string]struct{}))
+			collectionSourceID, err := taskCollectionSourceID(records, object.ID, make(map[string]struct{}))
 			if err != nil {
 				return fmt.Errorf("Subtask %q: %w", object.ID, err)
 			}
@@ -1104,21 +1105,25 @@ func isComputedFieldType(value string) bool {
 	}
 }
 
-func taskObject(objects []connector.SourceObject, id string) (connector.SourceObject, bool) {
+// recordObjectIndex indexes the record-bearing source objects by original id so
+// that ancestry lookups stay linear in the size of the Workspace rather than
+// rescanning the whole source index for every nested record.
+func recordObjectIndex(objects []connector.SourceObject) map[string]connector.SourceObject {
+	index := make(map[string]connector.SourceObject, len(objects))
 	for _, object := range objects {
-		if (object.Type == "task" || object.Type == "subtask") && object.ID == id {
-			return object, true
+		if object.Type == "task" || object.Type == "subtask" {
+			index[object.ID] = object
 		}
 	}
-	return connector.SourceObject{}, false
+	return index
 }
 
-func taskCollectionSourceID(objects []connector.SourceObject, id string, seen map[string]struct{}) (string, error) {
+func taskCollectionSourceID(records map[string]connector.SourceObject, id string, seen map[string]struct{}) (string, error) {
 	if _, duplicate := seen[id]; duplicate {
 		return "", errors.New("Task parent hierarchy contains a cycle")
 	}
 	seen[id] = struct{}{}
-	object, found := taskObject(objects, id)
+	object, found := records[id]
 	if !found {
 		return "", fmt.Errorf("Task parent source id %q is missing", id)
 	}
@@ -1128,5 +1133,5 @@ func taskCollectionSourceID(objects []connector.SourceObject, id string, seen ma
 		}
 		return object.ParentID, nil
 	}
-	return taskCollectionSourceID(objects, object.ParentID, seen)
+	return taskCollectionSourceID(records, object.ParentID, seen)
 }

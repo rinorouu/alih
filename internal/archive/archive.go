@@ -193,6 +193,13 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 		return fail(fmt.Errorf("copy immutable raw evidence: %w", err))
 	}
 	portable.Attachments = append([]model.Attachment(nil), portable.Attachments...)
+	// The archive's own output must not depend on the order its caller happened
+	// to supply. Sorting here fixes both the download order and the order the
+	// manifest records, so logically identical evidence always produces an
+	// identical manifest.
+	sort.Slice(portable.Attachments, func(i, j int) bool {
+		return portable.Attachments[i].ID < portable.Attachments[j].ID
+	})
 	downloadAttachments(ctx, filepath.Join(staging, "attachments"), &portable, options)
 
 	metadata := map[string]string{
