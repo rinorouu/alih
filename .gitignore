@@ -3,3 +3,4 @@
 /.env
 /.env.*
 /credentials.json
+/dist/

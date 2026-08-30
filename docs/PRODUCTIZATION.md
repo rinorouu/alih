@@ -9,7 +9,7 @@ Scope: ClickUp
 Primary Interface: CLI
 Product Language: English
 Distribution: Compiled binary
-Source Code: Private
+Source Code: Free and open source (Apache-2.0)
 
 Purpose
 
@@ -68,10 +68,10 @@ Workspace: Example Workspace
 Status: VERIFIED_WITH_LIMITATIONS
 
 Archive:
-/home/user/Alih/Demeter-API/2026-08-30T123000/
+/home/user/Alih/Example-Workspace/2026-08-30T123000/archive
 
 Recovery report:
-/home/user/Alih/Demeter-API/2026-08-30T123000/recovery-report.html
+/home/user/Alih/Example-Workspace/2026-08-30T123000/recovery-report.html
 
 Your ClickUp data was not modified.
 
@@ -223,7 +223,7 @@ Default output:
 
 Contoh:
 
-~/Alih/Demeter-API/2026-08-30T123000/
+~/Alih/Example-Workspace/2026-08-30T123000/
 
 Workspace component pada filesystem harus dibuat aman untuk digunakan sebagai path.
 
@@ -235,15 +235,18 @@ Output location tidak boleh diam-diam menimpa archive existing.
 
 9. Portable Archive
 
-Successful backup menghasilkan portable archive berdasarkan format yang sudah dibangun oleh core Alih.
+Successful backup menghasilkan backup directory dengan portable archive
+berdasarkan format yang sudah dibangun oleh core Alih dan Recovery Report di
+sebelah sealed archive, sesuai behavior core saat ini.
 
 Minimal:
 
-alih.db
-attachments/
-raw/
-manifest.json
-schema.json
+archive/
+  alih.db
+  attachments/
+  raw/
+  manifest.json
+  schema.json
 recovery-report.html
 
 File tambahan diperbolehkan apabila merupakan:
@@ -473,10 +476,10 @@ Workspace: Example Workspace
 Status: VERIFIED_WITH_LIMITATIONS
 
 Archive:
-/home/user/Alih/Demeter-API/2026-08-30T123000/
+/home/user/Alih/Example-Workspace/2026-08-30T123000/archive
 
 Recovery report:
-/home/user/Alih/Demeter-API/2026-08-30T123000/recovery-report.html
+/home/user/Alih/Example-Workspace/2026-08-30T123000/recovery-report.html
 
 Your ClickUp data was not modified.
 
@@ -641,20 +644,29 @@ Productization tidak boleh menghapus advanced commands hanya untuk menyederhanak
 
 27. Distribution
 
-Alpha v0.1 didistribusikan sebagai compiled binary.
+Alpha v0.1 dapat didistribusikan sebagai compiled binary, dan source code core
+Alih tersedia sebagai free/open-source software di bawah Apache-2.0.
 
-Tester tidak membutuhkan:
+Tester yang menggunakan release binary tidak harus memiliki:
 
-- source repository;
-- access ke private GitHub repository;
 - Go toolchain;
 - "git clone";
 - "go build";
 - development environment Alih.
 
-Source code Alih tetap private.
+Source repository tetap tersedia bagi user yang ingin memeriksa, membangun,
+memodifikasi, atau menjalankan Alih sendiri sesuai license project.
 
 Binary dapat didistribusikan secara langsung kepada closed Alpha tester.
+
+Boundary produk:
+
+- Alih OSS adalah software yang dapat dijalankan sendiri oleh user.
+- Future Alih Managed dapat berupa service opsional yang dioperasikan oleh
+  maintainers di atas OSS core.
+
+Boundary ini tidak menambahkan managed service ke scope Alpha dan tidak
+menetapkan availability, feature set, pricing, atau paywall apa pun.
 
 ---
 
@@ -680,9 +692,8 @@ Cross-platform support tidak boleh memperlambat validasi core workflow tanpa evi
 
 29. Binary Security Expectations
 
-Compiled binary tidak dianggap sebagai mekanisme perlindungan source code absolut.
-
-Source repository tetap private.
+Compiled binary adalah release artifact, bukan boundary akses terhadap source
+code. Source repository tetap public di bawah Apache-2.0.
 
 Binary tidak boleh mengandung:
 
@@ -913,7 +924,7 @@ Alpha v0.1 dianggap siap untuk external closed testing apabila:
 - source tetap read-only;
 - interruption tidak menghasilkan false-complete archive;
 - binary tidak mengandung developer secrets;
-- tester tidak membutuhkan source repository;
+- tester tidak harus membangun dari source repository;
 - tester tidak membutuhkan Go toolchain;
 - core M0–M7 tidak diduplikasi oleh orchestration layer.
 
