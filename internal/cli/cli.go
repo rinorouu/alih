@@ -43,6 +43,8 @@ const helpText = `ALIH is a local-first SaaS data portability tool.
 
 Usage:
   alih --help
+  alih --version
+  alih version
   alih auth
   alih backup [--workspace-id ID]
   alih scan [--workspace-id ID]
@@ -52,6 +54,7 @@ Usage:
   alih report --archive PATH [--format text|html|json]
 
 Commands:
+  version      Print the ALIH version
   auth         Authenticate with ClickUp and list accessible Workspaces
   backup       Create and verify a portable ClickUp backup
   scan         Inventory one ClickUp Workspace without modifying it
@@ -66,6 +69,13 @@ M1 manual verification:
 
 Flags:
   -h, --help   Show this help message
+  --version    Print the ALIH version
+`
+
+const versionHelpText = `Print the ALIH version.
+
+Usage:
+  alih version
 `
 
 const backupHelpText = `ALIH creates a verified portable ClickUp backup.
@@ -208,6 +218,9 @@ type Options struct {
 	CredentialStore     credentialStore
 	EnvironmentToken    string
 	EnvironmentTokenSet bool
+	// Version is the release identity supplied by the application entry point.
+	// An empty value is rendered as dev for local development builds.
+	Version string
 	// BackupRoot overrides ~/Alih for tests or an explicitly embedded caller.
 	// The Alpha CLI deliberately exposes no output-location flag yet.
 	BackupRoot string
@@ -248,6 +261,9 @@ func New(stdout, stderr io.Writer, logger *slog.Logger, options Options) *App {
 
 // Run executes the CLI with args and returns a process exit code.
 func (a *App) Run(args []string) int {
+	if len(args) > 0 && args[0] == "version" {
+		return a.runVersion(args[1:])
+	}
 	if len(args) > 0 && args[0] == "auth" {
 		return a.runAuth(args[1:])
 	}
@@ -275,12 +291,21 @@ func (a *App) Run(args []string) int {
 	flags.Usage = func() {
 		fmt.Fprint(a.stdout, helpText)
 	}
+	showVersion := flags.Bool("version", false, "print the ALIH version")
 
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
+	}
+	if *showVersion {
+		if flags.NArg() > 0 {
+			fmt.Fprintln(a.stderr, "alih: --version cannot be combined with commands or arguments")
+			return 2
+		}
+		a.printVersion()
+		return 0
 	}
 
 	if flags.NArg() > 0 {
@@ -294,6 +319,27 @@ func (a *App) Run(args []string) int {
 
 	flags.Usage()
 	return 0
+}
+
+func (a *App) runVersion(args []string) int {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(a.stdout, versionHelpText)
+		return 0
+	}
+	if len(args) > 0 {
+		fmt.Fprintln(a.stderr, "alih version: arguments are not accepted")
+		return 2
+	}
+	a.printVersion()
+	return 0
+}
+
+func (a *App) printVersion() {
+	version := strings.TrimSpace(a.options.Version)
+	if version == "" {
+		version = "dev"
+	}
+	fmt.Fprintf(a.stdout, "alih %s\n", displayValue(version))
 }
 
 func (a *App) runReport(args []string) int {

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 
+	"alih/internal/buildinfo"
 	"alih/internal/cli"
 	"alih/internal/config"
 	"alih/internal/connector/clickup"
@@ -52,6 +53,7 @@ func run(args []string) int {
 		CredentialStore:     credentials.NewFileStore(""),
 		EnvironmentToken:    cfg.ClickUpToken,
 		EnvironmentTokenSet: cfg.ClickUpTokenSet,
+		Version:             buildinfo.Version,
 	})
 
 	return app.Run(args)
