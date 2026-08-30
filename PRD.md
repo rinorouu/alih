@@ -557,7 +557,8 @@ Example conceptual structure:
 {
   "alih_version": "0.0.1",
   "connector": "clickup",
-  "created_at": "...",
+  "source_snapshot_completed_at": "...",
+  "archive_completed_at": "...",
   "source": {
     "workspace_id": "...",
     "workspace_name": "..."
@@ -581,7 +582,22 @@ Example conceptual structure:
   "verification": {}
 }
 
-The manifest must be deterministic enough to support future independent verification.
+Reading the source and producing the archive are two separate events, and the
+manifest must not blur them into one timestamp. "source_snapshot_completed_at"
+is the instant the source traversal finished reading; "archive_completed_at" is
+the instant the archive itself was finished. They can be far apart, and a report
+that presents one as the other overstates what it knows.
+
+An archive that was never completed records no completion instant rather than
+borrowing the source one.
+
+Neither instant may be derived from filesystem timestamps unless that is
+explicitly adopted as part of the archive contract.
+
+The manifest must be deterministic enough to support future independent
+verification: two archives built from identical source evidence must agree on
+everything except the instants that inherently describe when the build itself
+happened.
 
 ---
 
