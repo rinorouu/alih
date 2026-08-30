@@ -32,7 +32,29 @@ reference connector, but it is not part of Alih's core identity.
 If Alih expects 12,491 records and archives 12,487, the result is not
 `VERIFIED`. It is `INCOMPLETE`, with the unresolved records reported.
 
-## Install from source
+## Install
+
+Prebuilt release binaries are available from
+[GitHub Releases](https://github.com/rinorouu/alih/releases):
+
+- `alih-linux-amd64`
+- `alih-linux-arm64`
+- `alih-windows-amd64.exe`
+- `alih-darwin-amd64`
+- `alih-darwin-arm64`
+
+Download `SHA256SUMS` from the same release and verify the binary before
+running it. On Linux and macOS, make the downloaded binary executable:
+
+```bash
+chmod +x alih-<platform>-<architecture>
+./alih-<platform>-<architecture> --version
+```
+
+On Windows, run `alih-windows-amd64.exe`. WSL uses the appropriate Linux
+binary; it does not require a separate build.
+
+### Build from source
 
 Building Alih requires Go 1.22 or later and cgo because the archive uses
 SQLite.
@@ -42,9 +64,6 @@ git clone https://github.com/rinorouu/alih
 cd alih
 go build -o alih ./cmd/alih
 ```
-
-Release binaries may also be provided. Verify a release binary against its
-published checksum before running it; see [ALPHA.md](ALPHA.md).
 
 ## Quick start
 

@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [[ -n "${unformatted}" ]]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "${unformatted}"
+            exit 1
+          fi
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            goos: linux
+            goarch: amd64
+            artifact: alih-linux-amd64
+            macos_deployment_target: ""
+          - runner: ubuntu-22.04-arm
+            goos: linux
+            goarch: arm64
+            artifact: alih-linux-arm64
+            macos_deployment_target: ""
+          - runner: windows-2025
+            goos: windows
+            goarch: amd64
+            artifact: alih-windows-amd64.exe
+            macos_deployment_target: ""
+          - runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            artifact: alih-darwin-amd64
+            macos_deployment_target: "11.0"
+          - runner: macos-15
+            goos: darwin
+            goarch: arm64
+            artifact: alih-darwin-arm64
+            macos_deployment_target: "11.0"
+    env:
+      CGO_ENABLED: "1"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Configure MinGW
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $mingw = "C:\msys64\mingw64\bin"
+          if (-not (Test-Path (Join-Path $mingw "gcc.exe"))) {
+            throw "The GitHub-hosted Windows runner does not contain the expected MinGW compiler."
+          }
+          $mingw | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify native CGO target
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(go env GOHOSTOS)" == "${GOOS}" ]]
+          [[ "$(go env GOHOSTARCH)" == "${GOARCH}" ]]
+          [[ "$(go env CGO_ENABLED)" == "1" ]]
+          cc="$(go env CC)"
+          command -v "${cc}"
+          "${cc}" --version
+
+      - name: Verify native CGO target
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ((go env GOHOSTOS).Trim() -ne $env:GOOS) {
+            throw "Runner OS does not match release target."
+          }
+          if ((go env GOHOSTARCH).Trim() -ne $env:GOARCH) {
+            throw "Runner architecture does not match release target."
+          }
+          if ((go env CGO_ENABLED).Trim() -ne "1") {
+            throw "CGO is not enabled."
+          }
+          $ccName = (go env CC).Trim()
+          $cc = Get-Command $ccName -ErrorAction Stop
+          & $cc.Source --version
+          if ($LASTEXITCODE -ne 0) {
+            throw "The C compiler could not be executed."
+          }
+
+      - name: Test native SQLite build
+        run: go test ./...
+
+      - name: Build and verify binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          go build -trimpath \
+            -ldflags "-X alih/internal/buildinfo.Version=${version}" \
+            -o "release/${{ matrix.artifact }}" \
+            ./cmd/alih
+          actual="$("release/${{ matrix.artifact }}" --version)"
+          [[ "${actual}" == "alih ${version}" ]]
+
+      - name: Build and verify binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $binary = Join-Path $PWD "release/${{ matrix.artifact }}"
+          go build -trimpath `
+            -ldflags "-X alih/internal/buildinfo.Version=$version" `
+            -o $binary `
+            ./cmd/alih
+          if ($LASTEXITCODE -ne 0) {
+            throw "go build failed."
+          }
+          $actual = (& $binary --version).Trim()
+          if ($actual -ne "alih $version") {
+            throw "Version check failed: expected 'alih $version', got '$actual'."
+          }
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: release/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          mapfile -t artifacts < <(find . -maxdepth 1 -type f -name 'alih-*' -printf '%f\n' | sort)
+          if [[ "${#artifacts[@]}" -ne 5 ]]; then
+            echo "Expected 5 release binaries, found ${#artifacts[@]}."
+            exit 1
+          fi
+          sha256sum "${artifacts[@]}" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release-assets/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "${GITHUB_REF_NAME}"

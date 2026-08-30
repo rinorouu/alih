@@ -1,6 +1,6 @@
 # Alih Alpha
 
-- Version: `0.1.0-alpha.1`
+- Version: `0.2.0`
 - Status: Alpha
 - Reference connector: ClickUp
 
@@ -36,12 +36,12 @@ limitations instead of claiming they were preserved.
 
 ### Release binary
 
-A release binary should be distributed with its SHA-256 checksum. Example
-Linux files:
+A release publishes platform binaries together with one SHA-256 checksum file.
+Example Linux files:
 
 ```text
 alih-linux-amd64
-alih-linux-amd64.sha256
+SHA256SUMS
 ```
 
 Make the binary executable:
@@ -65,7 +65,7 @@ Check the version:
 Expected for this release:
 
 ```text
-alih 0.1.0-alpha.1
+alih 0.2.0
 ```
 
 ### Build from source
@@ -81,10 +81,11 @@ go build -o alih ./cmd/alih
 
 ## Verify the Download
 
-Before running a release binary, verify its SHA-256 checksum:
+Before running a release binary, verify it against the matching entry in
+`SHA256SUMS`:
 
 ```bash
-sha256sum -c alih-linux-amd64.sha256
+grep 'alih-linux-amd64$' SHA256SUMS | sha256sum --check
 ```
 
 Expected:
