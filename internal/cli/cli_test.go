@@ -147,7 +147,8 @@ func TestHelp(t *testing.T) {
 		t.Fatalf("Run(--help) returned %d, want 0", code)
 	}
 	for _, expected := range []string{
-		"Usage:\n  alih --help\n  alih auth\n  alih backup [--workspace-id ID]\n  alih scan [--workspace-id ID]",
+		"Usage:\n  alih --help\n  alih --version\n  alih version\n  alih auth\n  alih backup [--workspace-id ID]\n  alih scan [--workspace-id ID]",
+		"version      Print the ALIH version",
 		"auth         Authenticate with ClickUp and list accessible Workspaces",
 		"scan         Inventory one ClickUp Workspace without modifying it",
 		"M1 manual verification:",
@@ -160,6 +161,49 @@ func TestHelp(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("Run(--help) wrote to stderr: %q", stderr.String())
+	}
+}
+
+func TestVersionCommandAndFlagDefaultToDevelopmentIdentity(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		var stdout, stderr bytes.Buffer
+		app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+		if code := app.Run(args); code != 0 {
+			t.Fatalf("Run(%v) returned %d, stderr=%q", args, code, stderr.String())
+		}
+		if got := stdout.String(); got != "alih dev\n" {
+			t.Errorf("Run(%v) output=%q, want %q", args, got, "alih dev\n")
+		}
+		if stderr.Len() != 0 {
+			t.Errorf("Run(%v) stderr=%q", args, stderr.String())
+		}
+	}
+}
+
+func TestVersionCommandAndFlagPrintInjectedReleaseIdentity(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		var stdout, stderr bytes.Buffer
+		app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{Version: "0.1.0-alpha.1"})
+		if code := app.Run(args); code != 0 {
+			t.Fatalf("Run(%v) returned %d, stderr=%q", args, code, stderr.String())
+		}
+		if got := stdout.String(); got != "alih 0.1.0-alpha.1\n" {
+			t.Errorf("Run(%v) output=%q", args, got)
+		}
+	}
+}
+
+func TestVersionRejectsArguments(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	if code := app.Run([]string{"version", "unexpected"}); code != 2 {
+		t.Fatalf("code=%d, want 2", code)
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "arguments are not accepted") {
+		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 
