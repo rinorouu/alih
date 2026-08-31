@@ -24,6 +24,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -91,7 +92,7 @@ func (s *FileStore) Load() (string, error) {
 	if !info.Mode().IsRegular() {
 		return "", errors.New("credential path is not a regular file")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return "", fmt.Errorf("credential file permissions %04o are too broad; require 0600", info.Mode().Perm())
 	}
 
@@ -222,7 +223,7 @@ func validateSecureDirectory(directory string) error {
 	if !info.IsDir() {
 		return errors.New("credential directory path is not a directory")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("credential directory permissions %04o are too broad; require 0700", info.Mode().Perm())
 	}
 	return nil

@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -314,6 +315,9 @@ func TestBuildRefusesTargetThatAlreadyExists(t *testing.T) {
 func TestBuildFailsClosedWhenTheFilesystemRefusesWrites(t *testing.T) {
 	t.Parallel()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not deny writes on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: directory permissions do not deny writes")
 	}

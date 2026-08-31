@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -27,6 +26,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"alih/internal/model"
+	"alih/internal/sqliteutil"
 )
 
 const sqliteDDL = `
@@ -227,7 +227,7 @@ CREATE INDEX idx_relationships_to ON relationships(to_record_id);
 `
 
 func writeSQLite(path string, portable model.Archive, metadata map[string]string) error {
-	databaseURL := (&url.URL{Scheme: "file", Path: path}).String()
+	databaseURL := sqliteutil.FileURI(path)
 	dsn := databaseURL + "?_foreign_keys=on&_journal_mode=DELETE&_synchronous=FULL&_busy_timeout=5000"
 	database, err := sql.Open("sqlite3", dsn)
 	if err != nil {

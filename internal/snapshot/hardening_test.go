@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -315,6 +316,9 @@ func TestSessionRejectsUseAfterClose(t *testing.T) {
 // for in the ledger, never dropped.
 func TestRecordResponseReportsWriteFailure(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not deny writes on Windows")
+	}
 
 	parent := t.TempDir()
 	target := filepath.Join(parent, "m3")
