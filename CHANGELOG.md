@@ -19,6 +19,11 @@ Changes in this section are intended for v0.2.4 until that release is tagged.
 - Installer checks for unsupported platforms, download failures, checksum
   mismatches, and preservation of an existing installation on failure.
 - First-run workflow guidance in `alih` and `alih --help`.
+- `CONTRIBUTING.md`, describing the issue-first process, the principles a
+  change must not break, and the checks to run before opening a pull request.
+- Continuous integration that runs formatting, `go vet`, the POSIX installer
+  test, and the full test suite with the race detector on Linux, Windows, and
+  macOS for every push and pull request to `main`.
 
 ### Changed
 
@@ -36,6 +41,9 @@ Changes in this section are intended for v0.2.4 until that release is tagged.
   existing installation.
 - Installers use user-level destinations and do not silently invoke privilege
   escalation.
+- `SECURITY.md`, documenting private vulnerability reporting through GitHub,
+  the supported version, what is in and out of scope, and the security
+  properties Alih aims to hold.
 
 ## [0.2.3] - 2026-08-31
 
