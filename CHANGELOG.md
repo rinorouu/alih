@@ -9,7 +9,9 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
-Changes in this section are intended for v0.2.4 until that release is tagged.
+## [0.2.4] - 2026-08-31
+
+This is the first release published from the public repository.
 
 ### Added
 
@@ -93,7 +95,8 @@ so no GitHub Release was published for this tag.
 - Backup orchestration through scan, extract, portable archive creation,
   independent verification, and Recovery Report generation.
 
-[Unreleased]: https://github.com/rinorouu/alih/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/rinorouu/alih/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/rinorouu/alih/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rinorouu/alih/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/rinorouu/alih/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rinorouu/alih/compare/v0.2.0...v0.2.1
