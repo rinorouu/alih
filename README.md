@@ -45,7 +45,7 @@ The commands below execute the official installer delivered over HTTPS. To
 inspect it first, download the same `install.sh` or `install.ps1` URL to a file,
 review it, and then run the local file.
 
-### Linux / WSL
+### Linux
 
 ```bash
 curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
@@ -53,7 +53,6 @@ curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh 
 
 The default location is `~/.local/bin/alih`. If that directory is not already
 in `PATH`, the installer prints the directory and the exact binary path to use.
-WSL uses the Linux build.
 
 ### macOS
 
@@ -66,6 +65,18 @@ detected automatically.
 
 ### Windows
 
+#### WSL — recommended if Smart App Control blocks the native executable
+
+WSL uses Alih's supported Linux build. From a WSL shell, install Alih and
+confirm the installation with:
+
+```bash
+curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
+~/.local/bin/alih --version
+```
+
+#### Native Windows — available, but currently unsigned
+
 Run in PowerShell:
 
 ```powershell
@@ -75,6 +86,12 @@ irm https://github.com/rinorouu/alih/releases/latest/download/install.ps1 | iex
 The default location is `%LOCALAPPDATA%\Alih\bin\alih.exe`. The installer adds
 that directory to the current user's `PATH` when needed; open a new terminal
 afterward. It never changes the machine-wide `PATH`.
+
+The native Windows executable is currently unsigned. On Windows 11, Microsoft
+Smart App Control may block `alih.exe` because its publisher cannot be verified.
+If this happens, use Alih through WSL. Keep Smart App Control, Microsoft
+Defender, and SmartScreen enabled, and do not change security policies to run
+Alih.
 
 Set `ALIH_INSTALL_DIR` before running an installer to choose another absolute,
 user-writable directory.
