@@ -9,11 +9,6 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
-### Added
-
-- Dependabot configuration for Go modules and GitHub Actions, so dependency
-  and workflow-action updates arrive as pull requests that CI verifies.
-
 ## [0.2.4] - 2026-08-31
 
 This is the first release published from the public repository.
@@ -31,6 +26,8 @@ This is the first release published from the public repository.
 - Continuous integration that runs formatting, `go vet`, the POSIX installer
   test, and the full test suite with the race detector on Linux, Windows, and
   macOS for every push and pull request to `main`.
+- Dependabot configuration for Go modules and GitHub Actions, so dependency
+  and workflow-action updates arrive as pull requests that CI verifies.
 
 ### Changed
 
@@ -40,6 +37,7 @@ This is the first release published from the public repository.
   source builds remain documented.
 - The release workflow now validates the installers and publishes them with
   the existing five platform binaries.
+- Updated `github.com/mattn/go-sqlite3` from 1.14.49 to 1.14.50.
 
 ### Security
 
