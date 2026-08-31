@@ -1,6 +1,6 @@
 # Alih Alpha
 
-- Version: `0.2.0`
+- Version: `0.2.3`
 - Status: Alpha
 - Reference connector: ClickUp
 
@@ -65,7 +65,7 @@ Check the version:
 Expected for this release:
 
 ```text
-alih 0.2.0
+alih 0.2.3
 ```
 
 ### Build from source
@@ -74,7 +74,7 @@ Alih is free and open-source software. Building it requires Go 1.22 or later
 and cgo.
 
 ```bash
-git clone https://github.com/rinorouu/alih
+git clone https://github.com/rinorouu/alih.git
 cd alih
 go build -o alih ./cmd/alih
 ```
