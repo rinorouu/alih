@@ -148,13 +148,18 @@ func TestHelp(t *testing.T) {
 		t.Fatalf("Run(--help) returned %d, want 0", code)
 	}
 	for _, expected := range []string{
-		"Usage:\n  alih --help\n  alih --version\n  alih version\n  alih auth\n  alih backup [--workspace-id ID]\n  alih scan [--workspace-id ID]",
+		"ALIH creates and verifies local, portable SaaS backups.",
+		"ClickUp is currently supported through its official read-only API.",
+		"Usage:\n  alih <command> [options]\n  alih --help\n  alih --version",
 		"version      Print the ALIH version",
 		"auth         Authenticate with ClickUp and list accessible Workspaces",
 		"scan         Inventory one ClickUp Workspace without modifying it",
-		"M1 manual verification:",
-		"Set ALIH_CLICKUP_TOKEN in the process environment",
-		"alih export --snapshot PATH [--output PATH]",
+		"Get started:",
+		"Set ALIH_CLICKUP_TOKEN in your environment",
+		"Run \"alih auth\"",
+		"Optionally run \"alih scan\"",
+		"Run \"alih backup\"",
+		"alih <command> --help",
 	} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Errorf("help output does not contain %q: %q", expected, stdout.String())
@@ -162,6 +167,26 @@ func TestHelp(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("Run(--help) wrote to stderr: %q", stderr.String())
+	}
+}
+
+func TestNoArgumentsPrintsFirstRunHelp(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+
+	if code := app.Run(nil); code != 0 {
+		t.Fatalf("Run(nil) returned %d, want 0", code)
+	}
+	for _, expected := range []string{"Get started:", "alih auth", "alih scan", "alih backup"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Errorf("first-run help does not contain %q: %q", expected, stdout.String())
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("Run(nil) wrote to stderr: %q", stderr.String())
 	}
 }
 
@@ -722,7 +747,12 @@ func TestAuthReportsMissingCredential(t *testing.T) {
 	if code := app.Run([]string{"auth"}); code != 1 {
 		t.Fatalf("Run(auth) returned %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "no ClickUp credential configured") {
+	for _, expected := range []string{"Alih is not authenticated", "Set ALIH_CLICKUP_TOKEN", `run "alih auth"`} {
+		if !strings.Contains(stderr.String(), expected) {
+			t.Fatalf("missing credential error does not contain %q: %q", expected, stderr.String())
+		}
+	}
+	if strings.Contains(stderr.String(), "ErrNotConfigured") {
 		t.Fatalf("missing credential error is not explicit: %q", stderr.String())
 	}
 }

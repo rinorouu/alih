@@ -187,6 +187,43 @@ func TestExitCodeMatrix(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedCommandsExplainHowToConfigureMissingAuthentication(t *testing.T) {
+	t.Parallel()
+
+	missing := &stubCredentialStore{loadErr: credentials.ErrNotConfigured}
+	cases := []struct {
+		name    string
+		args    []string
+		options Options
+	}{
+		{"auth", []string{"auth"}, Options{Authenticator: &stubAuthenticator{}, CredentialStore: missing}},
+		{"scan", []string{"scan"}, Options{Authenticator: &stubAuthenticator{}, Scanner: &stubScanner{}, CredentialStore: missing}},
+		{"extract", []string{"extract", "--output", "snapshot"}, Options{Authenticator: &stubAuthenticator{}, Extractor: &stubExtractor{}, CredentialStore: missing}},
+		{"export", []string{"export", "--snapshot", "snapshot"}, Options{Exporter: &stubArchiveExporter{}, CredentialStore: missing}},
+		{"backup", []string{"backup"}, Options{
+			Authenticator: &stubAuthenticator{}, Scanner: &stubScanner{}, Extractor: &stubExtractor{},
+			Exporter: &stubArchiveExporter{}, Verifier: &stubArchiveVerifier{}, Reporter: &stubArchiveReporter{},
+			CredentialStore: missing,
+		}},
+	}
+
+	for _, testCase := range cases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			code, stdout, stderr := runCLI(t, testCase.options, testCase.args...)
+			if code != 1 {
+				t.Fatalf("Run(%v) returned %d, stdout=%q stderr=%q", testCase.args, code, stdout, stderr)
+			}
+			for _, expected := range []string{"Alih is not authenticated", "Set ALIH_CLICKUP_TOKEN", `run "alih auth"`} {
+				if !strings.Contains(stderr, expected) {
+					t.Errorf("stderr does not contain %q: %q", expected, stderr)
+				}
+			}
+		})
+	}
+}
+
 // TestFailingCommandsNeverPrintASuccessClaim guards against a failure that
 // still reads like a success on stdout.
 func TestFailingCommandsNeverPrintASuccessClaim(t *testing.T) {
