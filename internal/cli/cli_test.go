@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -626,12 +627,16 @@ func TestAuthVerifiesEnvironmentTokenSavesAndListsWorkspaces(t *testing.T) {
 	if authenticator.credential != token || store.saved != token {
 		t.Fatal("environment credential was not used and saved")
 	}
+	credentialProtection := "plaintext, protected by permissions 0600"
+	if runtime.GOOS == "windows" {
+		credentialProtection = "plaintext, stored under your Windows user profile"
+	}
 	for _, expected := range []string{
 		"Authenticated with ClickUp as Local Developer (ID: 42)",
 		"Accessible Workspaces (2):",
 		"- Primary (ID: 100)",
 		"- <unnamed> (ID: 200)",
-		"plaintext, protected by permissions 0600",
+		credentialProtection,
 		"No source data modified.",
 	} {
 		if !strings.Contains(stdout.String(), expected) {
