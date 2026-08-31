@@ -9,6 +9,11 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
+### Added
+
+- Dependabot configuration for Go modules and GitHub Actions, so dependency
+  and workflow-action updates arrive as pull requests that CI verifies.
+
 ## [0.2.4] - 2026-08-31
 
 This is the first release published from the public repository.
