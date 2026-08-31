@@ -60,7 +60,7 @@ Building Alih requires Go 1.22 or later and cgo because the archive uses
 SQLite.
 
 ```bash
-git clone https://github.com/rinorouu/alih
+git clone https://github.com/rinorouu/alih.git
 cd alih
 go build -o alih ./cmd/alih
 ```
