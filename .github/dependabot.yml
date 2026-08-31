@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # Alih has one direct dependency, so Go updates are rare and reviewed by hand.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
+
+  # The release and CI workflows pin actions by major version; this keeps those
+  # pins from falling behind.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
