@@ -14,6 +14,8 @@ archive, and reports what it can and cannot prove.
 existing backup and data-protection practices. ClickUp is the first and
 reference connector, but it is not part of Alih's core identity.
 
+See [CHANGELOG.md](CHANGELOG.md) for tagged, released, and pending changes.
+
 ## Principles
 
 - **Read-only.** Every request to the source is a `GET`. Alih never creates,
@@ -34,7 +36,52 @@ If Alih expects 12,491 records and archives 12,487, the result is not
 
 ## Install
 
-Prebuilt release binaries are available from
+The official installers select the latest stable release, download the matching
+binary and `SHA256SUMS`, and refuse to install unless SHA-256 verification
+succeeds. They install at user level and do not use `sudo` or request
+Administrator privileges.
+
+The commands below execute the official installer delivered over HTTPS. To
+inspect it first, download the same `install.sh` or `install.ps1` URL to a file,
+review it, and then run the local file.
+
+### Linux / WSL
+
+```bash
+curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
+```
+
+The default location is `~/.local/bin/alih`. If that directory is not already
+in `PATH`, the installer prints the directory and the exact binary path to use.
+WSL uses the Linux build.
+
+### macOS
+
+```bash
+curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
+```
+
+The default location is `~/.local/bin/alih`. Both Intel and Apple Silicon are
+detected automatically.
+
+### Windows
+
+Run in PowerShell:
+
+```powershell
+irm https://github.com/rinorouu/alih/releases/latest/download/install.ps1 | iex
+```
+
+The default location is `%LOCALAPPDATA%\Alih\bin\alih.exe`. The installer adds
+that directory to the current user's `PATH` when needed; open a new terminal
+afterward. It never changes the machine-wide `PATH`.
+
+Set `ALIH_INSTALL_DIR` before running an installer to choose another absolute,
+user-writable directory.
+
+### Manual installation
+
+Prebuilt binaries remain available from
 [GitHub Releases](https://github.com/rinorouu/alih/releases):
 
 - `alih-linux-amd64`
@@ -43,16 +90,19 @@ Prebuilt release binaries are available from
 - `alih-darwin-amd64`
 - `alih-darwin-arm64`
 
-Download `SHA256SUMS` from the same release and verify the binary before
-running it. On Linux and macOS, make the downloaded binary executable:
+Download `SHA256SUMS` from the same release and verify the selected binary's
+SHA-256 entry before running it. On Linux and macOS, then make it executable
+and place it in a directory in `PATH` under the name `alih`:
 
 ```bash
+mkdir -p ~/.local/bin
 chmod +x alih-<platform>-<architecture>
-./alih-<platform>-<architecture> --version
+mv alih-<platform>-<architecture> ~/.local/bin/alih
+~/.local/bin/alih --version
 ```
 
-On Windows, run `alih-windows-amd64.exe`. WSL uses the appropriate Linux
-binary; it does not require a separate build.
+On Windows, compare `Get-FileHash -Algorithm SHA256` with `SHA256SUMS`, then
+install the verified file as `alih.exe` in a user-level directory.
 
 ### Build from source
 
@@ -79,20 +129,34 @@ environment. Alih verifies and stores it locally for subsequent runs.
 
 ```bash
 export ALIH_CLICKUP_TOKEN='YOUR_CLICKUP_TOKEN'
-./alih auth
+alih auth
 unset ALIH_CLICKUP_TOKEN
 ```
+
+In Windows PowerShell:
+
+```powershell
+$env:ALIH_CLICKUP_TOKEN = 'YOUR_CLICKUP_TOKEN'
+alih auth
+Remove-Item Env:ALIH_CLICKUP_TOKEN
+```
+
+After successful verification, Alih stores the token in `credentials.json`
+under the operating system's user configuration directory. On Linux and
+macOS, Alih requires user-only directory and file permissions. On Windows, the
+file relies on the user profile's access controls. Alih does not encrypt this
+file, put it in an archive, or print the token in normal command output.
 
 Create and independently verify a backup:
 
 ```bash
-./alih backup
+alih backup
 ```
 
 If more than one accessible ClickUp Workspace exists, select one explicitly:
 
 ```bash
-./alih backup --workspace-id WORKSPACE_ID
+alih backup --workspace-id WORKSPACE_ID
 ```
 
 A completed backup is stored under

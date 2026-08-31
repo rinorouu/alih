@@ -1,8 +1,10 @@
 # Alih Alpha
 
-- Version: `0.2.3`
+- Version: `0.2.4`
 - Status: Alpha
 - Reference connector: ClickUp
+
+Release history and pending changes are documented in `CHANGELOG.md`.
 
 Alih creates a local, portable, independently verified archive of your ClickUp
 data.
@@ -34,7 +36,25 @@ limitations instead of claiming they were preserved.
 
 ## Installation
 
-### Release binary
+### Release installer
+
+Linux, WSL, and macOS:
+
+```bash
+curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/rinorouu/alih/releases/latest/download/install.ps1 | iex
+```
+
+Each installer downloads the matching binary and `SHA256SUMS`, verifies the
+binary before replacing any existing Alih installation, and installs it at
+user level. See `README.md` for installation directories and `PATH` behavior.
+
+### Manual release binary
 
 A release publishes platform binaries together with one SHA-256 checksum file.
 Example Linux files:
@@ -65,7 +85,7 @@ Check the version:
 Expected for this release:
 
 ```text
-alih 0.2.3
+alih 0.2.4
 ```
 
 ### Build from source
@@ -101,27 +121,28 @@ the release.
 
 Alih Alpha currently uses a ClickUp personal API token.
 
-Set the token temporarily in your shell:
+On Linux, WSL, or macOS, set the token temporarily in your shell and
+authenticate:
 
 ```bash
 export ALIH_CLICKUP_TOKEN='YOUR_CLICKUP_TOKEN'
-```
-
-Then run:
-
-```bash
-./alih auth
-```
-
-Alih verifies the credential with ClickUp and stores it locally for future
-runs.
-
-After successful authentication, you may remove the token from the current
-shell environment:
-
-```bash
+alih auth
 unset ALIH_CLICKUP_TOKEN
 ```
+
+On Windows PowerShell:
+
+```powershell
+$env:ALIH_CLICKUP_TOKEN = 'YOUR_CLICKUP_TOKEN'
+alih auth
+Remove-Item Env:ALIH_CLICKUP_TOKEN
+```
+
+Alih verifies the credential with ClickUp and stores it in `credentials.json`
+under the operating system's user configuration directory for future runs. On
+Linux and macOS, Alih requires user-only directory and file permissions. On
+Windows, the file relies on the user profile's access controls. The credential
+file is not encrypted by Alih.
 
 Alih does not store your ClickUp credential inside backup archives or Recovery
 Reports.
@@ -133,7 +154,7 @@ Do not send your ClickUp token when reporting a bug.
 Run:
 
 ```bash
-./alih backup
+alih backup
 ```
 
 If exactly one accessible ClickUp Workspace exists, Alih selects it
@@ -142,7 +163,7 @@ automatically.
 If your account has multiple accessible Workspaces, specify one explicitly:
 
 ```bash
-./alih backup --workspace-id WORKSPACE_ID
+alih backup --workspace-id WORKSPACE_ID
 ```
 
 Alih will run the backup pipeline:
@@ -318,7 +339,7 @@ Error message:
 You can get the Alih version with:
 
 ```bash
-./alih --version
+alih --version
 ```
 
 Please do not send:
@@ -337,25 +358,25 @@ understand what it contains.
 Show help:
 
 ```bash
-./alih --help
+alih --help
 ```
 
 Show version:
 
 ```bash
-./alih --version
+alih --version
 ```
 
 Verify an existing archive:
 
 ```bash
-./alih verify --archive /home/user/path/to/archive
+alih verify --archive /home/user/path/to/archive
 ```
 
 Generate a text Recovery Report:
 
 ```bash
-./alih report --archive /home/user/path/to/archive
+alih report --archive /home/user/path/to/archive
 ```
 
 These commands do not modify the ClickUp source.

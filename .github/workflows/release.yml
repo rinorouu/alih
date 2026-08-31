@@ -35,6 +35,14 @@ jobs:
             exit 1
           fi
 
+      - name: Test POSIX installer
+        shell: sh
+        run: |
+          set -eu
+          sh -n install.sh
+          sh -n scripts/test-install.sh
+          sh scripts/test-install.sh
+
       - name: Test
         run: go test ./...
 
@@ -90,6 +98,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Parse PowerShell installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "install.ps1"),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "install.ps1 contains PowerShell syntax errors."
+          }
 
       - name: Set up MSYS2 UCRT64
         if: runner.os == 'Windows'
@@ -198,6 +222,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out installer sources
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - name: Download release binaries
         uses: actions/download-artifact@v8
         with:
@@ -217,6 +246,12 @@ jobs:
           fi
           sha256sum "${artifacts[@]}" > SHA256SUMS
           cat SHA256SUMS
+
+      - name: Stage installer scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp install.sh install.ps1 release-assets/
 
       - name: Create GitHub Release
         env:

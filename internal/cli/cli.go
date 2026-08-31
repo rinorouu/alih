@@ -40,19 +40,13 @@ import (
 	"alih/internal/verify"
 )
 
-const helpText = `ALIH is a local-first SaaS data portability tool.
+const helpText = `ALIH creates and verifies local, portable SaaS backups.
+ClickUp is currently supported through its official read-only API.
 
 Usage:
+  alih <command> [options]
   alih --help
   alih --version
-  alih version
-  alih auth
-  alih backup [--workspace-id ID]
-  alih scan [--workspace-id ID]
-  alih extract --output PATH [--workspace-id ID]
-  alih export --snapshot PATH [--output PATH]
-  alih verify --archive PATH
-  alih report --archive PATH [--format text|html|json]
 
 Commands:
   version      Print the ALIH version
@@ -64,9 +58,13 @@ Commands:
   verify       Independently verify an existing M4 portable archive
   report       Produce a human-readable recovery report for an archive
 
-M1 manual verification:
-  Set ALIH_CLICKUP_TOKEN in the process environment, then run "alih auth".
-  A successfully verified token is saved locally for later "alih auth" runs.
+Get started:
+  1. Set ALIH_CLICKUP_TOKEN in your environment.
+  2. Run "alih auth" to verify and save the credential locally.
+  3. Optionally run "alih scan" to inspect the accessible Workspace.
+  4. Run "alih backup" to create and verify a backup.
+
+Run "alih <command> --help" for command-specific options.
 
 Flags:
   -h, --help   Show this help message
@@ -938,7 +936,7 @@ func (a *App) authenticationToken() (token string, shouldSave bool, err error) {
 
 	token, err = a.options.CredentialStore.Load()
 	if errors.Is(err, credentials.ErrNotConfigured) {
-		return "", false, errors.New("no ClickUp credential configured; set ALIH_CLICKUP_TOKEN for the initial auth run")
+		return "", false, errors.New("Alih is not authenticated. Set ALIH_CLICKUP_TOKEN in your environment, then run \"alih auth\"")
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("load credential: %w", err)
