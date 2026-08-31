@@ -258,6 +258,28 @@ go test -race ./...
 go vet ./...
 ```
 
+Building Alih requires Go 1.22 or newer and a working C compiler, because the
+SQLite driver uses cgo.
+
+## Contributing
+
+Contributions are welcome. Bug reports, documentation fixes, and small clear
+fixes can go straight to an issue or pull request; new features, new commands,
+and new connectors should start with an issue so the direction can be agreed
+before the code is written.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the process, the principles a change
+must not break, and the checks CI runs.
+
+## Security
+
+Do not report security vulnerabilities in a public issue. Use GitHub's private
+vulnerability reporting on the
+[Security tab](https://github.com/rinorouu/alih/security).
+
+See [SECURITY.md](SECURITY.md) for what is in scope, what to include in a
+report, and what to expect after sending one.
+
 ## License
 
 Alih is free and open-source software licensed under the
