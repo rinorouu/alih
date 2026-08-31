@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -918,7 +919,11 @@ func (a *App) runAuth(args []string) int {
 			fmt.Fprintf(a.stdout, "- %s (ID: %s)\n", name, displayValue(workspace.ID))
 		}
 	}
-	fmt.Fprintf(a.stdout, "\nCredential storage: %q (plaintext, protected by permissions 0600)\n", location)
+	protection := "plaintext, protected by permissions 0600"
+	if runtime.GOOS == "windows" {
+		protection = "plaintext, stored under your Windows user profile"
+	}
+	fmt.Fprintf(a.stdout, "\nCredential storage: %q (%s)\n", location, protection)
 	fmt.Fprintln(a.stdout, "No source data modified.")
 	return 0
 }

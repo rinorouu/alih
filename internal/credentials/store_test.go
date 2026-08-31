@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -32,19 +33,21 @@ func TestFileStoreSavesAndLoadsWithRestrictivePermissions(t *testing.T) {
 	if err := store.Save("pk_test_secret"); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	directoryInfo, err := os.Stat(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := directoryInfo.Mode().Perm(); got != 0o700 {
-		t.Fatalf("directory permissions = %04o, want 0700", got)
-	}
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := fileInfo.Mode().Perm(); got != 0o600 {
-		t.Fatalf("file permissions = %04o, want 0600", got)
+	if runtime.GOOS != "windows" {
+		directoryInfo, err := os.Stat(directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := directoryInfo.Mode().Perm(); got != 0o700 {
+			t.Fatalf("directory permissions = %04o, want 0700", got)
+		}
+		fileInfo, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fileInfo.Mode().Perm(); got != 0o600 {
+			t.Fatalf("file permissions = %04o, want 0600", got)
+		}
 	}
 
 	token, err := store.Load()
@@ -68,6 +71,9 @@ func TestFileStoreReportsNotConfigured(t *testing.T) {
 
 func TestFileStoreRejectsBroadFilePermissions(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports synthesized Unix permission bits")
+	}
 
 	directory := filepath.Join(t.TempDir(), "alih")
 	if err := os.Mkdir(directory, 0o700); err != nil {
@@ -87,6 +93,9 @@ func TestFileStoreRejectsBroadFilePermissions(t *testing.T) {
 
 func TestFileStoreRejectsBroadDirectoryPermissions(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports synthesized Unix permission bits")
+	}
 
 	directory := filepath.Join(t.TempDir(), "alih")
 	if err := os.Mkdir(directory, 0o755); err != nil {
@@ -105,7 +114,7 @@ func TestFileStoreRejectsBroadDirectoryPermissions(t *testing.T) {
 }
 
 func TestFileStoreRejectsSymlink(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
+	if runtime.GOOS == "windows" {
 		t.Skip("symlink permissions differ on Windows")
 	}
 

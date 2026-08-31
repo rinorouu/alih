@@ -35,6 +35,7 @@ import (
 	"alih/internal/connector"
 	"alih/internal/connector/clickup"
 	"alih/internal/snapshot"
+	"alih/internal/sqliteutil"
 )
 
 var attachmentContent = []byte("portable attachment\n")
@@ -284,7 +285,7 @@ func refreshManifestChecksum(t *testing.T, archivePath, relative string) {
 func mutateDatabase(t *testing.T, archivePath string, statements ...string) {
 	t.Helper()
 	path := filepath.Join(archivePath, "alih.db")
-	database, err := sql.Open("sqlite3", (&url.URL{Scheme: "file", Path: path}).String())
+	database, err := sql.Open("sqlite3", sqliteutil.FileURI(path))
 	if err != nil {
 		t.Fatal(err)
 	}

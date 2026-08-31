@@ -19,9 +19,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"alih/internal/sqliteutil"
 )
 
 // sourceRef is the retained provider identity of one archived portable entity.
@@ -144,7 +145,7 @@ type portableDatabase struct {
 // to it. immutable=1 also prevents SQLite from creating journal or WAL files
 // beside the archived evidence.
 func openReadOnly(path string) (*sql.DB, error) {
-	databaseURL := (&url.URL{Scheme: "file", Path: path}).String()
+	databaseURL := sqliteutil.FileURI(path)
 	database, err := sql.Open("sqlite3", databaseURL+"?mode=ro&immutable=1&_query_only=1")
 	if err != nil {
 		return nil, err

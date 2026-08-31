@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -126,7 +127,7 @@ func TestBuildCreatesDeterministicSQLiteManifestSchemaRawAndAttachment(t *testin
 		}
 		if info, err := os.Stat(filepath.Join(target, "alih.db")); err != nil {
 			t.Fatal(err)
-		} else if info.Mode().Perm() != 0o600 {
+		} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 			t.Fatalf("alih.db permissions = %o, want 600", info.Mode().Perm())
 		}
 		stored, err := os.ReadFile(filepath.Join(target, "raw", "evidence.json"))

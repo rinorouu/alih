@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -219,6 +220,9 @@ func decodeFile(t *testing.T, path string, destination any) {
 
 func assertPermissions(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
