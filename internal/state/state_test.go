@@ -32,8 +32,9 @@ var (
 	testEnd      = time.Date(2026, 8, 31, 9, 5, 0, 0, time.UTC)
 	testDigest   = "sha256:" + strings.Repeat("ab", 32)
 	testDigestB  = "sha256:" + strings.Repeat("cd", 32)
-	testArchive  = "/home/tester/Alih/workspace/2026-08-31T090000Z/archive"
-	testDestRoot = "/home/tester/Alih"
+	testDestRoot = testAbsolutePath("home", "tester", "Alih")
+	testArchive  = filepath.Join(testDestRoot, "workspace", "2026-08-31T090000Z", "archive")
+	testReport   = filepath.Join(testDestRoot, "workspace", "2026-08-31T090000Z", "recovery-report.html")
 )
 
 func testScope() Scope {
@@ -70,7 +71,7 @@ func succeededAttempt() Attempt {
 	return Attempt{
 		OperationID: "20260831T090000Z-0badc0de", Operation: OperationBackup, Stage: StageFinalize,
 		Outcome: OutcomeSucceeded, StartedAt: testStart, EndedAt: &ended,
-		ArchivePath: testArchive, ReportPath: "/home/tester/Alih/workspace/2026-08-31T090000Z/recovery-report.html",
+		ArchivePath: testArchive, ReportPath: testReport,
 		AlihVersion: "dev",
 	}
 }

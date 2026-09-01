@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -43,10 +44,31 @@ func readCorpus(t *testing.T, name string) []byte {
 	return content
 }
 
+// requirePOSIXRecording skips a corpus test on Windows.
+//
+// These documents were recorded on a POSIX machine, so the destination they
+// carry is a POSIX absolute path. Alih validates a recorded destination with
+// filepath.IsAbs, which is correct: local state is written and read on one
+// machine, and on Windows an absolute path must name a volume. A Linux
+// recording is therefore genuinely unreadable on Windows, and that is the
+// reader behaving properly rather than a compatibility break -- no Alih ever
+// wrote one of these files on a Windows machine.
+//
+// The gap this leaves is real and worth stating: there is no Windows-recorded
+// local-format corpus, so Windows upgrades are not covered by frozen evidence
+// the way POSIX upgrades are.
+func requirePOSIXRecording(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the recorded corpus carries POSIX absolute paths, which no Windows Alih would have written")
+	}
+}
+
 // TestEveryRecordedStateVersionStillLoads proves an upgrade finds the state a
 // previous build left behind, whatever schema it was written under.
 func TestEveryRecordedStateVersionStillLoads(t *testing.T) {
 	t.Parallel()
+	requirePOSIXRecording(t)
 
 	cases := []struct {
 		file              string
@@ -104,6 +126,7 @@ func TestEveryRecordedStateVersionStillLoads(t *testing.T) {
 // migration on disk. A downgrade or a crash must find the file it left.
 func TestReadingOldStateNeverRewritesItInPlace(t *testing.T) {
 	t.Parallel()
+	requirePOSIXRecording(t)
 
 	for _, name := range []string{"state-v1.json", "state-v2.json"} {
 		original := readCorpus(t, name)
@@ -151,6 +174,7 @@ func TestAFutureStateSchemaIsRefusedNotGuessed(t *testing.T) {
 // readable across an upgrade and gains no facts it never recorded.
 func TestEveryRecordedEventVersionStillLoads(t *testing.T) {
 	t.Parallel()
+	requirePOSIXRecording(t)
 
 	for _, name := range []string{"events-v1.jsonl", "events-v2.jsonl"} {
 		t.Run(name, func(t *testing.T) {
