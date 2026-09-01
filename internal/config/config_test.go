@@ -48,20 +48,45 @@ func TestLoadReadsLogLevel(t *testing.T) {
 	}
 }
 
-func TestLoadReadsClickUpTokenWithoutTransformingIt(t *testing.T) {
+// TestCredentialVariableIsDerivedFromTheConnector proves Core names no
+// provider while still reading the variable ClickUp installations already use.
+func TestCredentialVariableIsDerivedFromTheConnector(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := load(func(key string) (string, bool) {
-		if key == clickUpTokenEnvironmentVariable {
+	for connectorName, want := range map[string]string{
+		"clickup":  "ALIH_CLICKUP_TOKEN",
+		"my-saas":  "ALIH_MY_SAAS_TOKEN",
+		"a.b c":    "ALIH_A_B_C_TOKEN",
+		"digits99": "ALIH_DIGITS99_TOKEN",
+	} {
+		if got := CredentialEnvironmentVariable(connectorName); got != want {
+			t.Errorf("CredentialEnvironmentVariable(%q) = %q, want %q", connectorName, got, want)
+		}
+	}
+}
+
+func TestCredentialFromEnvironmentReadsTheTokenWithoutTransformingIt(t *testing.T) {
+	t.Parallel()
+
+	token, ok := credentialFromEnvironment(func(key string) (string, bool) {
+		if key == "ALIH_CLICKUP_TOKEN" {
 			return "pk_exact_secret", true
 		}
 		return "", false
-	})
-	if err != nil {
-		t.Fatalf("load() error = %v", err)
+	}, "clickup")
+	if !ok || token != "pk_exact_secret" {
+		t.Fatalf("credential = %q set=%v; the token was not read exactly", token, ok)
 	}
-	if !cfg.ClickUpTokenSet || cfg.ClickUpToken != "pk_exact_secret" {
-		t.Fatal("ClickUp token was not loaded exactly")
+
+	// An unset variable and an explicitly empty one are different answers.
+	if _, ok := credentialFromEnvironment(func(string) (string, bool) { return "", false }, "clickup"); ok {
+		t.Error("an absent variable reported as set")
+	}
+	if value, ok := credentialFromEnvironment(func(string) (string, bool) { return "", true }, "clickup"); !ok || value != "" {
+		t.Error("an empty variable must stay distinguishable from an absent one")
+	}
+	if _, ok := credentialFromEnvironment(func(string) (string, bool) { return "x", true }, "  "); ok {
+		t.Error("a blank connector name must read no variable at all")
 	}
 }
 

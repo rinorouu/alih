@@ -235,16 +235,37 @@ windows/amd64, darwin/amd64, darwin/arm64.
 
 **Open work:**
 
-- **Multi-connector credential storage.** `internal/credentials` stores one
-  token in one file with the provider hard-coded. Harmless while ClickUp is the
-  only connector; must be closed before two can coexist on one machine. It is
-  the first thing to fix in the connector work, and `OPERATOR.md` records it as
-  the one prerequisite for operating Alih on someone else's behalf.
+- **Connector #2 itself.** The boundary is ready for one; none is written. The
+  credential store, the environment variable, and the archive writer's
+  credential policy are all connector-scoped now, so adding a connector is
+  adapter work plus one line in the composition root.
 - **Archives are written at manifest schema 3, which an Alih older than 0.2.5
   refuses.** That refusal is explicit and correct, not a bug — see the archive
   compatibility section of `README.md`. Schema 2 archives stay readable, and
   `internal/compat` pins both ends of that range against the frozen v0.2.4
   corpus.
+
+## Connector boundary
+
+What an adapter owns, and what Core refuses to know.
+
+- **Identity** is the adapter's `Name()`; `DisplayName()` is optional and falls
+  back to the identifier. That one identifier scopes the credential, derives the
+  environment variable, and is sealed into archives, state, events, and locks.
+  There is no second place a connector is named.
+- **Credentials** are addressed by connector. `internal/credentials` holds one
+  secret per connector; `internal/config` derives
+  `ALIH_<CONNECTOR>_TOKEN`, so ClickUp resolves to the documented
+  `ALIH_CLICKUP_TOKEN` without Core naming a provider.
+- **Which hosts may receive the credential** is declared by the adapter through
+  `connector.CredentialHostProvider`. Core defaults to sending it nowhere. The
+  archive writer previously carried `api.clickup.com` and attached the
+  credential only there, which meant every other connector silently got none.
+- **Errors** cross the boundary as typed `connector.OperationalError` values
+  carrying stable reason codes. Core never parses a provider's error text; do
+  not add a code path that does.
+- **Vocabulary** stays with the connector: `Inventory` counts neutrally and
+  carries the connector's own kind names beside the totals.
 
 ## Verification commands
 

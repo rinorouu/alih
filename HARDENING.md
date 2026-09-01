@@ -249,6 +249,10 @@ These are not scenarios but invariants every scenario is measured against.
 | Status JSON is pure, stable, and free of the credential | `TestStatusJSONIsPureStableAndFreeOfTheCredential` |
 | An archive is refused if it contains the credential | `TestBuildRefusesCredentialInRawSnapshot` |
 | Generated scheduler artifacts contain no credential | `TestNativePlansAreDeterministicBoundedAndContainNoCredential` |
+| The credential reaches only hosts the connector declared | `TestTheCredentialReachesOnlyDeclaredHosts`, `TestNoProviderHostnameIsCompiledIntoTheArchiveWriter` |
+| A credential is stored and read per connector, never globally | `TestTwoConnectorsCoexistWithoutOverwritingEachOther`, `TestCredentialAccessIsScopedToTheWiredConnector` |
+| A credential file this build cannot read is refused, not overwritten | `TestAnUnsupportedCredentialSchemaIsRefusedNotGuessed` |
+| A connector identifier is validated before it selects a credential | `TestConnectorNameIsValidatedBeforeItSelectsACredential` |
 | A provider-signed URL never escapes raw evidence | `TestTheProvableSurfacesNeverCarryASignedURL`, `TestReleasedArchivesCarryNoAlihCredential` |
 | Ordering uses position, not the wall clock | `TestOrderingUsesPositionNotTheWallClock` |
 | Status survives a clock that moved backwards | `TestStatusSurvivesAClockThatMovedBackwards` |
@@ -289,6 +293,10 @@ Where the space of inputs is larger than a table can enumerate.
 These are recorded rather than tested, because the honest answer is a boundary
 rather than a guarantee.
 
+- **A version 1 credential file names its provider inline.** Reading it back
+  requires knowing that name, so `internal/credentials` keeps one provider
+  constant on purpose. Core's other credential-path packages carry none, which
+  `TestCoreNamesNoProviderInItsCredentialPath` enforces.
 - **Authentication failure before a destination is resolved records nothing.**
   No scope exists to key it to. The operator still sees the full assessment on
   stderr. Covered as a deliberate limit by

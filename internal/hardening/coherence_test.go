@@ -16,13 +16,17 @@ package hardening
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"alih/internal/config"
 	"alih/internal/connector"
+	"alih/internal/connector/clickup"
+	"alih/internal/credentials"
 	"alih/internal/event"
 	"alih/internal/notify"
 	"alih/internal/schedule"
@@ -367,4 +371,76 @@ func testAbsolutePath(elements ...string) string {
 		root = `C:\`
 	}
 	return filepath.Join(append([]string{root}, elements...)...)
+}
+
+// TestCredentialScopingUsesTheSameConnectorIdentityAsEverythingElse pins the
+// connector boundary's single source of truth.
+//
+// A connector identifier now selects a credential, derives an environment
+// variable name, and is sealed into archives, state, events and locks. If those
+// ever disagreed, a credential could be filed under one name and looked for
+// under another. The identifier is the adapter's own Name(), and this test
+// asserts that the credential store and the environment both accept exactly the
+// shape connector identity already uses.
+func TestCredentialScopingUsesTheSameConnectorIdentityAsEverythingElse(t *testing.T) {
+	t.Parallel()
+
+	// The reference adapter's identity must satisfy the credential store's
+	// validation, or a real installation could not save at all.
+	name := clickup.Normalizer{}.Connector()
+	if err := credentials.ValidateConnector(name); err != nil {
+		t.Fatalf("the wired connector %q cannot scope a credential: %v", name, err)
+	}
+	if got := config.CredentialEnvironmentVariable(name); got != "ALIH_CLICKUP_TOKEN" {
+		t.Fatalf("environment variable = %q; the documented variable must not change", got)
+	}
+
+	// The state scope and the credential store agree about what a connector
+	// identifier is, so one cannot accept a name the other refuses.
+	for _, invalid := range []string{"", "Upper", "has space", "a/b"} {
+		if err := credentials.ValidateConnector(invalid); err == nil {
+			t.Errorf("credential store accepted connector name %q", invalid)
+		}
+	}
+}
+
+// TestCoreNamesNoProviderInItsCredentialPath proves the packages that decide
+// where a credential lives and who may receive it contain no provider name.
+func TestCoreNamesNoProviderInItsCredentialPath(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	// internal/credentials keeps one provider constant on purpose: the version 1
+	// file format named its provider inline, and reading it back requires
+	// knowing which name that was. Everything else must be neutral.
+	for _, packageDir := range []string{"internal/config", "internal/archive", "internal/exporter"} {
+		entries, err := os.ReadDir(filepath.Join(root, packageDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(root, packageDir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A comment may explain which variable ClickUp resolves to; code
+			// may not depend on it. Strip line comments before looking.
+			var code strings.Builder
+			for _, line := range strings.Split(string(content), "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "//") {
+					continue
+				}
+				code.WriteString(line)
+				code.WriteString("\n")
+			}
+			if strings.Contains(strings.ToLower(code.String()), "clickup") {
+				t.Errorf("%s/%s contains provider-specific code in Core's credential path", packageDir, name)
+			}
+		}
+	}
 }

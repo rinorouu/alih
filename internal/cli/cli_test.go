@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,6 +66,11 @@ type stubArchiveExporter struct {
 	outputPath   string
 	credential   string
 }
+
+// Connector mirrors the real exporter, which answers from the single adapter it
+// was constructed with. Without it a command that wires only an exporter cannot
+// name the credential variable it needs.
+func (stub *stubArchiveExporter) Connector() string { return "clickup" }
 
 func (stub *stubArchiveExporter) Export(_ context.Context, snapshotPath, outputPath, credential string) (archive.Summary, error) {
 	stub.snapshotPath, stub.outputPath, stub.credential = snapshotPath, outputPath, credential
@@ -127,13 +133,41 @@ type stubCredentialStore struct {
 	saveErr     error
 	location    string
 	locationErr error
+	// loadedFor and savedFor record the connector each call named, so a test
+	// can prove Core scopes credentials rather than holding one global secret.
+	// A single stub is shared by parallel subtests, so the recording is guarded:
+	// without the mutex, merely observing which connector was asked for would
+	// itself be the data race.
+	mu        sync.Mutex
+	loadedFor string
+	savedFor  string
 }
 
-func (s *stubCredentialStore) Load() (string, error) { return s.loaded, s.loadErr }
-func (s *stubCredentialStore) Save(token string) error {
+func (s *stubCredentialStore) Load(connectorName string) (string, error) {
+	s.mu.Lock()
+	s.loadedFor = connectorName
+	s.mu.Unlock()
+	return s.loaded, s.loadErr
+}
+func (s *stubCredentialStore) Save(connectorName, token string) error {
+	s.mu.Lock()
+	s.savedFor = connectorName
 	s.saved = token
+	s.mu.Unlock()
 	return s.saveErr
 }
+func (s *stubCredentialStore) scopes() (loadedFor, savedFor, saved string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadedFor, s.savedFor, s.saved
+}
+
+func (s *stubCredentialStore) savedToken() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saved
+}
+
 func (s *stubCredentialStore) Location() (string, error) { return s.location, s.locationErr }
 
 func TestHelp(t *testing.T) {
@@ -741,7 +775,7 @@ func TestAuthVerifiesEnvironmentTokenSavesAndListsWorkspaces(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run(auth) returned %d, stderr = %q", code, stderr.String())
 	}
-	if authenticator.credential != token || store.saved != token {
+	if authenticator.credential != token || store.savedToken() != token {
 		t.Fatal("environment credential was not used and saved")
 	}
 	credentialProtection := "plaintext, protected by permissions 0600"
@@ -785,7 +819,7 @@ func TestAuthLoadsSavedTokenWithoutSavingAgain(t *testing.T) {
 	if authenticator.credential != "saved-token" {
 		t.Fatalf("Authenticate credential = %q", authenticator.credential)
 	}
-	if store.saved != "" {
+	if store.savedToken() != "" {
 		t.Fatal("saved credential was unnecessarily rewritten")
 	}
 	if !strings.Contains(stdout.String(), "Accessible Workspaces: none returned by ClickUp.") {
@@ -811,7 +845,7 @@ func TestAuthFailureDoesNotSaveCredentialOrPrintPartialSuccess(t *testing.T) {
 	if code := app.Run([]string{"auth"}); code != 1 {
 		t.Fatalf("Run(auth) returned %d, want 1", code)
 	}
-	if store.saved != "" {
+	if store.savedToken() != "" {
 		t.Fatal("rejected credential was saved")
 	}
 	if stdout.Len() != 0 {
@@ -1183,3 +1217,79 @@ func TestReportRejectsUnknownFormatAndMissingArchive(t *testing.T) {
 		t.Fatalf("report help does not state its guarantees: %q", stdout.String())
 	}
 }
+
+// TestCredentialAccessIsScopedToTheWiredConnector proves Core never asks for
+// "the" credential. Every load and save names the connector it is for, which is
+// what stops a second connector reading or replacing the first one's secret.
+func TestCredentialAccessIsScopedToTheWiredConnector(t *testing.T) {
+	t.Parallel()
+
+	workspace := connector.Workspace{ID: "100", Name: "Example Workspace"}
+	store := &stubCredentialStore{loaded: "pk_scoped_secret", location: "/config/credentials.json"}
+	code, _, stderr := runCLI(t, Options{
+		Authenticator:   &stubAuthenticator{result: connector.Authentication{Workspaces: []connector.Workspace{workspace}}},
+		Scanner:         &stubScanner{result: connector.ScanResult{Workspace: workspace}},
+		CredentialStore: store,
+	}, "scan")
+	if code != 0 {
+		t.Fatalf("scan code=%d stderr=%s", code, stderr)
+	}
+	if loadedFor, _, _ := store.scopes(); loadedFor != "clickup" {
+		t.Fatalf("credential was loaded for %q, want the wired connector", loadedFor)
+	}
+}
+
+// TestSavingACredentialNamesTheConnectorItBelongsTo covers the other direction:
+// "alih auth" must file a verified credential under the connector that verified
+// it rather than as a single global secret.
+func TestSavingACredentialNamesTheConnectorItBelongsTo(t *testing.T) {
+	t.Parallel()
+
+	store := &stubCredentialStore{location: "/config/credentials.json"}
+	code, _, stderr := runCLI(t, Options{
+		Authenticator:             &stubAuthenticator{},
+		CredentialStore:           store,
+		EnvironmentToken:          "pk_from_environment",
+		EnvironmentTokenSet:       true,
+		SaveEnvironmentCredential: true,
+	}, "auth")
+	if code != 0 {
+		t.Fatalf("auth code=%d stderr=%s", code, stderr)
+	}
+	if _, savedFor, saved := store.scopes(); savedFor != "clickup" || saved != "pk_from_environment" {
+		t.Fatalf("saved %q for %q; want the exact secret filed under the wired connector", saved, savedFor)
+	}
+}
+
+// TestMissingAuthenticationNamesTheConnectorsOwnVariable proves the guidance a
+// person is given is derived from the wired connector rather than written into
+// Core, so a second connector is told about its own variable.
+func TestMissingAuthenticationNamesTheConnectorsOwnVariable(t *testing.T) {
+	t.Parallel()
+
+	code, _, stderr := runCLI(t, Options{
+		Authenticator:   &renamedAuthenticator{},
+		Scanner:         &renamedScanner{},
+		CredentialStore: &stubCredentialStore{loadErr: credentials.ErrNotConfigured},
+	}, "scan")
+	if code != 1 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "ALIH_EXAMPLE_PROVIDER_TOKEN") {
+		t.Errorf("guidance does not name the connector's own variable: %q", stderr)
+	}
+	if strings.Contains(stderr, "ALIH_CLICKUP_TOKEN") {
+		t.Errorf("guidance named another provider's variable: %q", stderr)
+	}
+}
+
+// renamedAuthenticator and renamedScanner stand in for a connector that is not
+// ClickUp, without introducing one.
+type renamedAuthenticator struct{ stubAuthenticator }
+
+func (renamedAuthenticator) Name() string        { return "example-provider" }
+func (renamedAuthenticator) DisplayName() string { return "Example Provider" }
+
+type renamedScanner struct{ stubScanner }
+
+func (renamedScanner) Name() string { return "example-provider" }

@@ -23,17 +23,16 @@ import (
 )
 
 const (
-	logLevelEnvironmentVariable     = "ALIH_LOG_LEVEL"
-	clickUpTokenEnvironmentVariable = "ALIH_CLICKUP_TOKEN"
-	saveCredentialEnvironmentVar    = "ALIH_SAVE_CREDENTIAL"
+	logLevelEnvironmentVariable  = "ALIH_LOG_LEVEL"
+	saveCredentialEnvironmentVar = "ALIH_SAVE_CREDENTIAL"
 )
 
 // Config contains process-level settings that are safe to pass between Alih
-// packages. ClickUpToken is never logged or rendered by this package.
+// packages. No credential is stored here: a credential belongs to whichever
+// connector is wired, so it is read by name through CredentialFromEnvironment
+// rather than carried as a field Core would have to name after one provider.
 type Config struct {
-	LogLevel        slog.Level
-	ClickUpToken    string
-	ClickUpTokenSet bool
+	LogLevel slog.Level
 	// SaveCredential reports whether a credential supplied through the
 	// environment may also be written to the local credential store. It
 	// defaults to true, which is what a person setting Alih up once expects.
@@ -58,10 +57,6 @@ func load(lookupEnv func(string) (string, bool)) (Config, error) {
 		}
 	}
 
-	token, tokenSet := lookupEnv(clickUpTokenEnvironmentVariable)
-	cfg.ClickUpToken = token
-	cfg.ClickUpTokenSet = tokenSet
-
 	if value, ok := lookupEnv(saveCredentialEnvironmentVar); ok {
 		switch strings.ToLower(strings.TrimSpace(value)) {
 		case "0", "false", "no", "off", "never":
@@ -74,4 +69,40 @@ func load(lookupEnv func(string) (string, bool)) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// CredentialEnvironmentVariable is the process environment variable that
+// supplies one connector's credential.
+//
+// The name is derived from the connector rather than listed in Core, so adding
+// a connector adds its variable automatically and Core never has to name a
+// provider. ClickUp resolves to ALIH_CLICKUP_TOKEN, which is the variable Alih
+// has always documented and continues to read unchanged.
+func CredentialEnvironmentVariable(connectorName string) string {
+	var name strings.Builder
+	name.WriteString("ALIH_")
+	for _, character := range strings.ToUpper(strings.TrimSpace(connectorName)) {
+		switch {
+		case character >= 'A' && character <= 'Z', character >= '0' && character <= '9':
+			name.WriteRune(character)
+		default:
+			name.WriteByte('_')
+		}
+	}
+	name.WriteString("_TOKEN")
+	return name.String()
+}
+
+// CredentialFromEnvironment reads the credential a connector's variable holds.
+// The second result reports whether the variable was set at all, which is how
+// an explicitly empty value stays distinguishable from an absent one.
+func CredentialFromEnvironment(connectorName string) (string, bool) {
+	return credentialFromEnvironment(os.LookupEnv, connectorName)
+}
+
+func credentialFromEnvironment(lookupEnv func(string) (string, bool), connectorName string) (string, bool) {
+	if strings.TrimSpace(connectorName) == "" {
+		return "", false
+	}
+	return lookupEnv(CredentialEnvironmentVariable(connectorName))
 }

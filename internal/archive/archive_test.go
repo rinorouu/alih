@@ -506,3 +506,68 @@ func TestArchiveFallsBackToTheRunningBuildIdentity(t *testing.T) {
 		t.Fatalf("manifest alih version = %q, want the build identity %q", manifest.AlihVersion, buildinfo.Resolve(""))
 	}
 }
+
+// TestTheCredentialReachesOnlyDeclaredHosts pins the rule that replaced a
+// hard-coded provider hostname in this package.
+//
+// The old code attached the credential when the host equalled one provider's
+// API host. That was a provider fact living in Core: every other connector
+// silently received no credential, and widening it for a second connector would
+// have widened it for the first. The policy is now supplied by the connector and
+// the default is to send the credential nowhere, so a connector that declares
+// nothing cannot leak one.
+func TestTheCredentialReachesOnlyDeclaredHosts(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name  string
+		hosts []string
+		host  string
+		want  bool
+	}{
+		{"a declared host receives it", []string{"api.example.test"}, "api.example.test", true},
+		{"declaration matches case-insensitively", []string{"API.Example.TEST"}, "api.example.test", true},
+		{"surrounding space in a declaration is ignored", []string{"  api.example.test "}, "api.example.test", true},
+		{"one of several declared hosts", []string{"a.example.test", "b.example.test"}, "b.example.test", true},
+		{"an undeclared host does not", []string{"api.example.test"}, "files.cdn.test", false},
+		{"declaring nothing sends nothing", nil, "api.example.test", false},
+		{"an empty declaration sends nothing", []string{}, "api.example.test", false},
+		{"a subdomain is not covered by its parent", []string{"example.test"}, "api.example.test", false},
+		{"a parent is not covered by its subdomain", []string{"api.example.test"}, "example.test", false},
+		{"an empty host is never declared", []string{"api.example.test", ""}, "", false},
+		{"a prefix of a declared host does not match", []string{"api.example.test"}, "api.example.tes", false},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mayReceiveCredential(testCase.hosts, testCase.host); got != testCase.want {
+				t.Fatalf("mayReceiveCredential(%v, %q) = %v, want %v",
+					testCase.hosts, testCase.host, got, testCase.want)
+			}
+		})
+	}
+}
+
+// TestNoProviderHostnameIsCompiledIntoTheArchiveWriter proves the constant did
+// not simply move somewhere else in this package.
+func TestNoProviderHostnameIsCompiledIntoTheArchiveWriter(t *testing.T) {
+	t.Parallel()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		content, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToLower(string(content)), "clickup") {
+			t.Errorf("%s names a provider; the archive writer must not know one", name)
+		}
+	}
+}

@@ -168,6 +168,27 @@ type Options struct {
 	// evidence, supplied by its adapter. An empty value leaves the archive with
 	// only the connector identifier, which readers fall back to.
 	ConnectorDisplayName string
+	// CredentialHosts are the hostnames the connector says may receive its
+	// credential when an attachment is fetched. Core does not know any
+	// provider's hosts and must not guess: an empty list means the credential
+	// is attached to nothing, which is correct for attachments served from
+	// pre-signed URLs and safe for every connector that has not declared.
+	CredentialHosts []string
+}
+
+// mayReceiveCredential reports whether host was declared by the connector.
+// Comparison is case-insensitive and exact; there are no wildcards, so a
+// declared host never widens to its subdomains.
+func mayReceiveCredential(hosts []string, host string) bool {
+	if strings.TrimSpace(host) == "" {
+		return false
+	}
+	for _, allowed := range hosts {
+		if strings.EqualFold(strings.TrimSpace(allowed), host) {
+			return true
+		}
+	}
+	return false
 }
 
 // Build creates a new archive directory. A supported attachment failure still
@@ -383,7 +404,7 @@ func downloadAttachments(ctx context.Context, directory string, portable *model.
 			request.Header.Del("Authorization")
 			return errors.New("attachment redirect must use HTTPS")
 		}
-		if !strings.EqualFold(request.URL.Hostname(), "api.clickup.com") {
+		if !mayReceiveCredential(options.CredentialHosts, request.URL.Hostname()) {
 			request.Header.Del("Authorization")
 		}
 		if priorRedirect != nil {
@@ -412,7 +433,7 @@ func downloadAttachments(ctx context.Context, directory string, portable *model.
 		destination := filepath.Join(directory, attachment.ID+extension)
 		var lastError error
 		for attempt := 1; attempt <= maxDownloadAttempts; attempt++ {
-			retrying, err := downloadAttachmentAttempt(ctx, &clientCopy, destination, attachment, options.Credential)
+			retrying, err := downloadAttachmentAttempt(ctx, &clientCopy, destination, attachment, options.Credential, options.CredentialHosts)
 			if err == nil {
 				attachment.DownloadStatus = "RETRIEVED"
 				attachment.LocalPath = stringPointer(relative)
@@ -508,7 +529,7 @@ func backupOperationalAssessment(evidence snapshot.Evidence, portable model.Arch
 	return &assessment
 }
 
-func downloadAttachmentAttempt(ctx context.Context, client *http.Client, destination string, attachment *model.Attachment, credential string) (bool, error) {
+func downloadAttachmentAttempt(ctx context.Context, client *http.Client, destination string, attachment *model.Attachment, credential string, credentialHosts []string) (bool, error) {
 	parsed, err := url.Parse(attachment.DownloadURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 		return false, errors.New("source supplied an invalid or non-HTTPS attachment download URL")
@@ -519,7 +540,9 @@ func downloadAttachmentAttempt(ctx context.Context, client *http.Client, destina
 	}
 	request.Header.Set("Accept", "*/*")
 	request.Header.Set("User-Agent", "alih-v0")
-	if strings.EqualFold(parsed.Hostname(), "api.clickup.com") && credential != "" {
+	// The credential travels only to a host the connector named. Anything else
+	// -- including a signed CDN URL the source supplied -- is fetched anonymously.
+	if credential != "" && mayReceiveCredential(credentialHosts, parsed.Hostname()) {
 		request.Header.Set("Authorization", credential)
 	}
 	response, err := client.Do(request)

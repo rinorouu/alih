@@ -1148,6 +1148,16 @@ func (Normalizer) Connector() string { return "clickup" }
 // DisplayName is the human name recorded in archives this adapter produces.
 func (Normalizer) DisplayName() string { return "ClickUp" }
 
+// CredentialHosts declares the one host that may receive the ClickUp personal
+// token while attachments are fetched.
+//
+// ClickUp serves an attachment from its API host when the archived reference is
+// an API URL, and from a pre-signed storage URL otherwise. The signed URL
+// carries its own authorisation in the query string and must never also receive
+// the token, so exactly one host is declared here and Core attaches the
+// credential nowhere else.
+func (Normalizer) CredentialHosts() []string { return []string{"api.clickup.com"} }
+
 // NormalizeSnapshot turns ClickUp raw evidence into the portable model.
 func (Normalizer) NormalizeSnapshot(evidence snapshot.Evidence) (model.Archive, error) {
 	return NormalizeSnapshot(evidence)

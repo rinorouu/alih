@@ -278,3 +278,32 @@ type Extractor interface {
 	Connector
 	Extract(ctx context.Context, credential string, workspace Workspace, sink RawEvidenceSink) (ExtractionResult, error)
 }
+
+// CredentialHostProvider is implemented by a connector whose archived
+// attachments must be fetched with its own credential.
+//
+// It exists because deciding which host may receive a credential is a fact
+// about a provider, not about Alih. Core previously carried one provider's API
+// hostname in the archive writer and attached the credential only there, which
+// worked for exactly one connector and silently sent no credential for any
+// other. Making the connector declare its hosts keeps that knowledge in the
+// adapter that owns it.
+//
+// The contract is deliberately fail-closed. A connector that does not implement
+// this interface, or returns nothing, gets no credential on any attachment
+// request: an attachment served from a signed URL needs no credential, and
+// guessing wrongly would leak one to whatever host a source named.
+//
+// Hosts are compared case-insensitively against the URL host, without port and
+// without wildcards. A redirect away from the declared set has the credential
+// stripped before it is followed.
+//
+// It is a single method on purpose. The declaration is an optional capability
+// that Core type-asserts on whichever adapter object it already holds, so it
+// composes with the extraction and normalization interfaces without forcing a
+// connector to restate its identity for a third time.
+type CredentialHostProvider interface {
+	// CredentialHosts returns the hostnames that may receive this connector's
+	// credential. Returning nil means no host may.
+	CredentialHosts() []string
+}

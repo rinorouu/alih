@@ -25,6 +25,7 @@ import (
 
 	"alih/internal/archive"
 	"alih/internal/buildinfo"
+	"alih/internal/connector"
 	"alih/internal/model"
 	"alih/internal/snapshot"
 )
@@ -71,6 +72,25 @@ func NewWithVersion(httpClient *http.Client, alihVersion string, normalizers ...
 
 func (service *Service) Name() string { return "m4-portable-archive" }
 
+// Connector reports the connector this service can export, when it holds
+// exactly one adapter.
+//
+// It exists so a command that has no authenticator wired -- "alih export" reads
+// a snapshot rather than a source -- can still tell a person which credential
+// variable to set. The answer comes from the registered normalizer rather than
+// from a value Core stores separately, so there is one source of truth. With
+// several adapters registered the connector is whatever the snapshot records,
+// which is not knowable here, and the empty answer says exactly that.
+func (service *Service) Connector() string {
+	if len(service.normalizers) != 1 {
+		return ""
+	}
+	for name := range service.normalizers {
+		return name
+	}
+	return ""
+}
+
 func (service *Service) Export(ctx context.Context, snapshotPath, outputPath, credential string) (archive.Summary, error) {
 	evidence, err := snapshot.LoadComplete(snapshotPath)
 	if err != nil {
@@ -84,10 +104,18 @@ func (service *Service) Export(ctx context.Context, snapshotPath, outputPath, cr
 	if err != nil {
 		return archive.Summary{}, fmt.Errorf("normalize %s raw evidence: %w", evidence.Connector, err)
 	}
+	// Which hosts may receive the credential is the connector's knowledge, not
+	// Core's. A normalizer that declares nothing gets nothing attached, which
+	// is the safe answer for a provider whose attachments are pre-signed.
+	var credentialHosts []string
+	if provider, ok := normalizer.(connector.CredentialHostProvider); ok {
+		credentialHosts = provider.CredentialHosts()
+	}
 	return archive.Build(ctx, evidence, portable, outputPath, archive.Options{
 		HTTPClient:           service.httpClient,
 		Credential:           credential,
 		AlihVersion:          service.alihVersion,
 		ConnectorDisplayName: normalizer.DisplayName(),
+		CredentialHosts:      credentialHosts,
 	})
 }

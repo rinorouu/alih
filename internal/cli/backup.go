@@ -79,7 +79,7 @@ func (a *App) runBackup(args []string) int {
 	if err != nil {
 		return a.backupFailure(nil, "authentication", state.StageAuthenticate, err, "", token)
 	}
-	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID))
+	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID), a.connectorDisplayName())
 	if err != nil {
 		return a.backupFailure(nil, "workspace selection", state.StageAuthenticate, err, "", token)
 	}

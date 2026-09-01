@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"alih/internal/archive"
+	"alih/internal/config"
 	"alih/internal/connector"
 	"alih/internal/credentials"
 	"alih/internal/event"
@@ -250,9 +251,12 @@ writes it outside instead, because an M4 archive is sealed by manifest
 checksums and adding a file to it would make "alih verify" fail.
 `
 
+// credentialStore is Core's view of credential persistence. Every call names
+// the connector it concerns, so Core never holds "the" credential and a second
+// connector cannot overwrite the first.
 type credentialStore interface {
-	Load() (string, error)
-	Save(string) error
+	Load(connectorName string) (string, error)
+	Save(connectorName, secret string) error
 	Location() (string, error)
 }
 
@@ -812,7 +816,7 @@ func (a *App) runExtract(args []string) int {
 		fmt.Fprintf(a.stderr, "alih extract: %s\n", safeError(err, token))
 		return 1
 	}
-	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID))
+	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID), a.connectorDisplayName())
 	if err != nil {
 		fmt.Fprintf(a.stderr, "alih extract: %v\n", err)
 		return 1
@@ -949,7 +953,7 @@ func (a *App) runScan(args []string) int {
 		a.writeErrorAssessment(a.stderr, err)
 		return 1
 	}
-	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID))
+	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID), a.connectorDisplayName())
 	if err != nil {
 		if *asJSON {
 			a.writeScanFailureJSON(err, token, validAssessmentPointer(authentication.Assessment))
@@ -1031,6 +1035,16 @@ func (a *App) connectorName() string {
 	if a.options.Authenticator != nil {
 		return a.options.Authenticator.Name()
 	}
+	if a.options.Extractor != nil {
+		return a.options.Extractor.Name()
+	}
+	// "alih export" wires no source adapter because it reads a snapshot rather
+	// than a provider, yet it still has to name the credential variable when
+	// authentication is missing. The exporter answers from the adapter it was
+	// given, and answers nothing when it holds more than one.
+	if namer, ok := a.options.Exporter.(interface{ Connector() string }); ok && namer != nil {
+		return namer.Connector()
+	}
 	return ""
 }
 
@@ -1080,7 +1094,7 @@ func (a *App) writeErrorAssessment(output io.Writer, err error) {
 	}
 }
 
-func selectWorkspace(workspaces []connector.Workspace, requestedID string) (connector.Workspace, error) {
+func selectWorkspace(workspaces []connector.Workspace, requestedID, connectorDisplayName string) (connector.Workspace, error) {
 	if requestedID != "" {
 		for _, workspace := range workspaces {
 			if workspace.ID == requestedID {
@@ -1090,7 +1104,7 @@ func selectWorkspace(workspaces []connector.Workspace, requestedID string) (conn
 		return connector.Workspace{}, fmt.Errorf("Workspace ID %q is not accessible to the authenticated user", displayValue(requestedID))
 	}
 	if len(workspaces) == 0 {
-		return connector.Workspace{}, errors.New("ClickUp returned no accessible Workspaces")
+		return connector.Workspace{}, fmt.Errorf("%s returned no accessible Workspaces", connectorDisplayName)
 	}
 	if len(workspaces) > 1 {
 		var choices strings.Builder
@@ -1216,7 +1230,7 @@ func (a *App) saveVerifiedCredential(token string) error {
 	if a.options.CredentialStore == nil {
 		return errors.New("no credential store is available")
 	}
-	return a.options.CredentialStore.Save(token)
+	return a.options.CredentialStore.Save(a.connectorName(), token)
 }
 
 func (a *App) authenticationToken() (token string, shouldSave bool, err error) {
@@ -1227,9 +1241,10 @@ func (a *App) authenticationToken() (token string, shouldSave bool, err error) {
 		return a.options.EnvironmentToken, a.options.SaveEnvironmentCredential, nil
 	}
 
-	token, err = a.options.CredentialStore.Load()
+	token, err = a.options.CredentialStore.Load(a.connectorName())
 	if errors.Is(err, credentials.ErrNotConfigured) {
-		return "", false, errors.New("Alih is not authenticated. Set ALIH_CLICKUP_TOKEN in your environment, then run \"alih auth\"")
+		return "", false, fmt.Errorf("Alih is not authenticated. Set %s in your environment, then run %q",
+			config.CredentialEnvironmentVariable(a.connectorName()), "alih auth")
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("load credential: %w", err)
@@ -1269,4 +1284,21 @@ func displayValue(value string) string {
 		}
 		return character
 	}, value)
+}
+
+// connectorDisplayName is how the wired connector names itself to a person.
+// It follows connectorName's resolution order so the two never disagree, and
+// falls back to the identifier when an adapter offers no display name, so Core
+// never has to supply a provider name of its own.
+func (a *App) connectorDisplayName() string {
+	for _, candidate := range []any{a.options.Scanner, a.options.Authenticator} {
+		namer, ok := candidate.(interface{ DisplayName() string })
+		if !ok || namer == nil {
+			continue
+		}
+		if name := strings.TrimSpace(namer.DisplayName()); name != "" {
+			return name
+		}
+	}
+	return a.connectorName()
 }

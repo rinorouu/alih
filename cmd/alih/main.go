@@ -49,6 +49,10 @@ func run(args []string) int {
 	archiveVerifier := verifier.New(clickup.FieldSemantics{})
 	// One release identity reaches every artifact this process writes.
 	version := buildinfo.Version
+	// The credential is read from the variable the wired connector names, so
+	// adding a connector here brings its variable with it and Core never has to
+	// know that ClickUp's is ALIH_CLICKUP_TOKEN.
+	environmentToken, environmentTokenSet := config.CredentialFromEnvironment(clickUpClient.Name())
 	app := cli.New(os.Stdout, os.Stderr, logger, cli.Options{
 		Authenticator:       clickUpClient,
 		Scanner:             clickUpClient,
@@ -58,8 +62,8 @@ func run(args []string) int {
 		Reporter:            reporter.NewWithVersion(archiveVerifier, version, clickup.Normalizer{}),
 		Organizer:           organize.New(archiveVerifier, version),
 		CredentialStore:     credentials.NewFileStore(""),
-		EnvironmentToken:    cfg.ClickUpToken,
-		EnvironmentTokenSet: cfg.ClickUpTokenSet,
+		EnvironmentToken:    environmentToken,
+		EnvironmentTokenSet: environmentTokenSet,
 		// A credential injected per run stays where its owner put it when
 		// ALIH_SAVE_CREDENTIAL is off.
 		SaveEnvironmentCredential: cfg.SaveCredential,

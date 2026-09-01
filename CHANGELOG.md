@@ -9,6 +9,26 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
+### Changed
+
+- Credentials are stored per connector. The credential file previously held one
+  secret with its provider hard-coded, so a second connector would have
+  overwritten the first. Every read and write now names the connector it
+  concerns. **No action is required and nothing changes for a ClickUp
+  installation:** an existing credential file is read unchanged, and while
+  ClickUp is the only credential stored the file keeps the shape an earlier Alih
+  can read. It becomes a version 2 file only when a second connector is
+  configured, which an Alih older than that change refuses explicitly rather
+  than misreading.
+- The credential environment variable is derived from the connector rather than
+  named in the core, so `ALIH_CLICKUP_TOKEN` continues to work exactly as
+  documented and a future connector brings its own variable automatically.
+- The archive writer no longer decides which host may receive a credential. It
+  carried one provider's API hostname and attached the credential only there,
+  which meant any other connector silently received none. A connector now
+  declares its own hosts and the default is to send the credential nowhere, so
+  a pre-signed attachment URL cannot receive one by accident.
+
 ## [0.2.5] - 2026-09-01
 
 The Operational Foundation release. Alih could already make a verifiable

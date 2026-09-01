@@ -23,7 +23,10 @@ import (
 	"strings"
 	"testing"
 
+	"alih/internal/config"
 	"alih/internal/connector"
+	"alih/internal/connector/clickup"
+	"alih/internal/credentials"
 	"alih/internal/event"
 	"alih/internal/exporter"
 	"alih/internal/model"
@@ -264,5 +267,48 @@ func TestTwoConnectorsNeverCollideInOperationalState(t *testing.T) {
 	secondSource := event.Source{Connector: "other-example", WorkspaceID: "ws-1", Destination: destination}
 	if firstSource == secondSource {
 		t.Fatal("two connectors share one event source identity")
+	}
+}
+
+// TestTheReferenceConnectorDeclaresItsOwnCredentialHost proves the policy moved
+// into the adapter rather than being deleted, and that it did not widen.
+func TestTheReferenceConnectorDeclaresItsOwnCredentialHost(t *testing.T) {
+	t.Parallel()
+
+	var provider connector.CredentialHostProvider = clickup.Normalizer{}
+	hosts := provider.CredentialHosts()
+	if len(hosts) != 1 || hosts[0] != "api.clickup.com" {
+		t.Fatalf("declared hosts = %v, want exactly the one API host Core used to hard-code", hosts)
+	}
+}
+
+// TestAForeignConnectorNeedsNoClickUpCredentialKey proves Core addresses a
+// credential by whatever the connector calls itself, with no provider-specific
+// key anywhere in the path.
+func TestAForeignConnectorNeedsNoClickUpCredentialKey(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store := credentials.NewFileStore(filepath.Join(directory, "credentials.json"))
+
+	fake := newFakeConnector()
+	if err := store.Save(fake.Name(), "secret_for_the_fake_connector"); err != nil {
+		t.Fatalf("save a foreign connector credential: %v", err)
+	}
+	loaded, err := store.Load(fake.Name())
+	if err != nil || loaded != "secret_for_the_fake_connector" {
+		t.Fatalf("load = %q, %v", loaded, err)
+	}
+	if _, err := store.Load("clickup"); !errors.Is(err, credentials.ErrNotConfigured) {
+		t.Fatalf("a store holding only a foreign connector answered for clickup: %v", err)
+	}
+
+	// The environment variable is derived from the connector too, so a second
+	// connector brings its own without Core listing it.
+	if got := config.CredentialEnvironmentVariable(fake.Name()); got != "ALIH_EXAMPLE_TOKEN" {
+		t.Fatalf("environment variable = %q, want it derived from the connector name", got)
 	}
 }

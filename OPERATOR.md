@@ -157,15 +157,19 @@ Alih never escalates privileges and never installs anything system-wide.
 Retention is entirely the customer's decision: Alih writes a new timestamped
 bundle per run and deletes nothing, ever.
 
-## The prerequisite
+## The prerequisite, now closed
 
-**Multi-connector credential storage.** `internal/credentials` holds exactly
-one token in one file, with the provider hard-coded. This does not block
-operating ClickUp installations today, and every test above passes without it.
-It becomes a prerequisite the moment a second connector exists, because two
-connectors on one machine would overwrite each other's credential. It belongs
-to the work that adds a second connector, not to this review, and it is the
-only thing on that list still open.
+**Multi-connector credential storage.** `internal/credentials` used to hold
+exactly one token in one file with the provider hard-coded, so two connectors on
+one machine would have overwritten each other's credential. It now stores one
+secret per connector and every read and write names the connector it concerns.
+
+For an operator this changes nothing today and requires no action: a file
+written by an earlier Alih is read unchanged, and while ClickUp is the only
+credential stored the file keeps the shape an earlier Alih can read. It becomes
+a version 2 file only when a second connector is actually configured, at which
+point an Alih older than that migration refuses it explicitly rather than
+misreading it.
 
 ## Boundaries to state plainly, not engineer away
 
