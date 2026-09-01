@@ -43,6 +43,12 @@ var networkCapablePackages = map[string]string{
 	"internal/notify":            "delivers the webhook notifications a user explicitly configured",
 	"internal/sqliteutil":        "builds file: URIs for SQLite and makes no request",
 	"internal/organize":          "reads a sealed archive and makes no request",
+	// The conformance suite drives a connector through the real archive
+	// writer, which is where the credential-host contract lives. It accepts an
+	// HTTP client from the connector being tested and never constructs one, so
+	// it cannot originate a request; a subject that supplies no client has its
+	// pipeline contracts skipped rather than reaching the network.
+	"internal/conformance": "hands a connector's own HTTP client to the archive writer and never builds one",
 }
 
 func goPackages(t *testing.T) map[string]*build.Package {
