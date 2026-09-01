@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -422,7 +424,7 @@ func TestScopeKeyIdentifiesConnectorWorkspaceAndDestination(t *testing.T) {
 	for _, different := range []Scope{
 		{Connector: "other", WorkspaceID: "9001", Destination: testDestRoot},
 		{Connector: "clickup", WorkspaceID: "9002", Destination: testDestRoot},
-		{Connector: "clickup", WorkspaceID: "9001", Destination: "/mnt/backup"},
+		{Connector: "clickup", WorkspaceID: "9001", Destination: testAbsolutePath("mnt", "backup")},
 	} {
 		if different.Key() == base.Key() {
 			t.Fatalf("scope %#v collides with the base scope key", different)
@@ -501,4 +503,17 @@ func FuzzUnmarshalNeverPanicsAndNeverAcceptsAnInvalidRecord(f *testing.F) {
 			t.Fatal("a round trip changed the state-file identity")
 		}
 	})
+}
+
+// testAbsolutePath builds a deterministic absolute path that satisfies
+// filepath.IsAbs on every supported platform. Scope identity is compared as a
+// string, so the value must not vary by machine, but Windows does not consider
+// a rooted path absolute unless it names a volume. Hard-coded POSIX literals
+// therefore failed validation on Windows while passing everywhere else.
+func testAbsolutePath(elements ...string) string {
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = `C:\`
+	}
+	return filepath.Join(append([]string{root}, elements...)...)
 }

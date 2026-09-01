@@ -16,6 +16,8 @@ package event
 
 import (
 	"bytes"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +28,7 @@ import (
 var testTime = time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 
 func testSource() Source {
-	return Source{Connector: "clickup", WorkspaceID: "100", Destination: "/home/tester/Alih"}
+	return Source{Connector: "clickup", WorkspaceID: "100", Destination: testAbsolutePath("home", "tester", "Alih")}
 }
 
 func startedEvent() Event {
@@ -320,4 +322,17 @@ func FuzzUnmarshalNeverPanicsAndNeverAcceptsAnUnsafeEvent(f *testing.F) {
 			t.Fatal("a round trip changed the event position")
 		}
 	})
+}
+
+// testAbsolutePath builds a deterministic absolute path that satisfies
+// filepath.IsAbs on every supported platform. Scope identity is compared as a
+// string, so the value must not vary by machine, but Windows does not consider
+// a rooted path absolute unless it names a volume. Hard-coded POSIX literals
+// therefore failed validation on Windows while passing everywhere else.
+func testAbsolutePath(elements ...string) string {
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = `C:\`
+	}
+	return filepath.Join(append([]string{root}, elements...)...)
 }

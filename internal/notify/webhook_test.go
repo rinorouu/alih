@@ -22,6 +22,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -41,7 +43,7 @@ func notifyTestEvent() event.Event {
 		Sequence:      2,
 		RecordedAt:    notifyTestTime,
 		Source: event.Source{
-			Connector: "clickup", WorkspaceID: "100", Destination: "/tmp/Alih",
+			Connector: "clickup", WorkspaceID: "100", Destination: testAbsolutePath("tmp", "Alih"),
 		},
 		Operation:   state.OperationBackup,
 		Stage:       state.StageScan,
@@ -268,3 +270,16 @@ func TestWebhookRejectsInvalidEventAndHeaderSecretWithoutEgress(t *testing.T) {
 }
 
 var _ io.ReadCloser = (*countingBody)(nil)
+
+// testAbsolutePath builds a deterministic absolute path that satisfies
+// filepath.IsAbs on every supported platform. Scope identity is compared as a
+// string, so the value must not vary by machine, but Windows does not consider
+// a rooted path absolute unless it names a volume. Hard-coded POSIX literals
+// therefore failed validation on Windows while passing everywhere else.
+func testAbsolutePath(elements ...string) string {
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = `C:\`
+	}
+	return filepath.Join(append([]string{root}, elements...)...)
+}

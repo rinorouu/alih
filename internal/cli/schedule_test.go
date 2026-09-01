@@ -59,6 +59,11 @@ func writeScheduleConfig(t *testing.T, root, destination string) {
 	}
 }
 
+// scheduleTestToken is a credential the schedule harness holds so that
+// "the generated plan carries no credential" is a claim about a real secret
+// rather than about the word "token" appearing in the output.
+const scheduleTestToken = "pk_schedule_must_never_leak"
+
 func scheduleCLI(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer, *cliScheduleRunner) {
 	t.Helper()
 	configRoot := filepath.Join(t.TempDir(), "config")
@@ -72,7 +77,8 @@ func scheduleCLI(t *testing.T) (*App, *bytes.Buffer, *bytes.Buffer, *cliSchedule
 		ExecutablePath: filepath.Join(home, "bin", "alih"), UserHome: home, UserID: "1000",
 		// A schedule may only be generated for a connector this build can run,
 		// so the harness wires the one the fixture configuration names.
-		Authenticator: &backupAuthenticator{recorder: &backupRecorder{}},
+		Authenticator:   &backupAuthenticator{recorder: &backupRecorder{}},
+		CredentialStore: &stubCredentialStore{loaded: scheduleTestToken},
 	})
 	return app, stdout, stderr, runner
 }
@@ -90,8 +96,12 @@ func TestScheduleCheckAndPreviewAreReadOnly(t *testing.T) {
 	if code := app.Run([]string{"schedule", "preview", "daily-main", "--json"}); code != 0 {
 		t.Fatalf("preview code=%d stderr=%s", code, stderr.String())
 	}
+	// The credential itself must never appear. Searching for the word "token"
+	// is not a usable proxy for that: a Windows Task Scheduler definition
+	// legitimately contains <LogonType>InteractiveToken</LogonType>, which made
+	// this check fail on Windows for a plan that leaked nothing.
 	if len(runner.commands) != 0 || !strings.Contains(stdout.String(), `"schedule_id": "daily-main"`) ||
-		!strings.Contains(stdout.String(), `--workspace-id`) || strings.Contains(strings.ToLower(stdout.String()), "token") {
+		!strings.Contains(stdout.String(), `--workspace-id`) || strings.Contains(stdout.String(), scheduleTestToken) {
 		t.Fatalf("preview invoked commands=%#v or was unsafe: %s", runner.commands, stdout.String())
 	}
 }

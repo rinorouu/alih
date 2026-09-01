@@ -325,7 +325,7 @@ func TestLatestReturnsTheNewestEventsOfOneScope(t *testing.T) {
 	if unfiltered := Latest(append(mine, other), testSource(), 0); len(unfiltered) != 2 {
 		t.Fatalf("unlimited latest = %#v", unfiltered)
 	}
-	if none := Latest(mine, Source{Connector: "clickup", WorkspaceID: "999", Destination: "/x"}, 5); len(none) != 0 {
+	if none := Latest(mine, Source{Connector: "clickup", WorkspaceID: "999", Destination: testAbsolutePath("x")}, 5); len(none) != 0 {
 		t.Fatalf("a scope with no events returned %#v", none)
 	}
 }

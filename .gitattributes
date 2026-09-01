@@ -1,0 +1,13 @@
+# Alih ships archives whose integrity is proven by checksums over exact bytes.
+# Git's end-of-line conversion rewrites those bytes on checkout, which on
+# Windows made every fixture disagree with the manifest that seals it: each file
+# grew by one byte per line, and the frozen v0.2.4 compatibility corpus stopped
+# being frozen. Test evidence must reach every platform exactly as recorded.
+**/testdata/** -text
+
+# The archive database is binary; never diff or convert it.
+*.db binary
+
+# Shell scripts must keep LF wherever they are checked out, because the
+# installer is executed on POSIX systems and published as a release asset.
+*.sh text eol=lf

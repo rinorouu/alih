@@ -637,9 +637,6 @@ func validateRoots(archivePath, outputPath string) (string, string, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", "", errors.New("archive path must be a real directory")
 	}
-	if err := rejectSymlinkComponents(archiveRoot); err != nil {
-		return "", "", fmt.Errorf("archive path traversal: %w", err)
-	}
 	if _, err := os.Lstat(output); err == nil {
 		return "", "", fmt.Errorf("organized-view output already exists: %s", output)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -667,13 +664,13 @@ func prepareParent(path string) error {
 		}
 		ancestor = parent
 	}
-	if err := rejectSymlinkComponents(ancestor); err != nil {
+	if err := rejectSymlink(ancestor); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return fmt.Errorf("create organized-view parent: %w", err)
 	}
-	return rejectSymlinkComponents(path)
+	return rejectSymlink(path)
 }
 
 func within(root, candidate string) bool {
@@ -681,39 +678,52 @@ func within(root, candidate string) bool {
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
-func rejectSymlinkComponents(path string) error {
-	current := filepath.Clean(path)
-	for {
-		info, err := os.Lstat(current)
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("organized-view parent contains a symlink or non-directory component: %s", current)
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return nil
-		}
-		current = parent
-	}
-}
-
-func safeRelative(path string) bool {
-	clean := filepath.Clean(filepath.FromSlash(path))
-	return path != "" && !filepath.IsAbs(clean) && clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
+// rejectSymlink refuses to publish into a location that is a symbolic link or
+// is not a directory, so the view cannot be redirected somewhere the caller did
+// not name.
+//
+// It deliberately inspects one path rather than walking to the filesystem root.
+// The earlier version rejected a symlink anywhere in the ancestry, which is a
+// property no real system has: on macOS /var and /tmp are links into /private,
+// so every temporary and scratch location was refused and organize could not
+// run at all. The directory the view is created in, and the deepest ancestor
+// that already existed, are the components a caller's own path controls; an
+// attacker who can relink the operating system's own directories above those
+// already owns the machine.
+func rejectSymlink(path string) error {
+	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
-	defer directory.Close()
-	if err := directory.Sync(); err != nil && !errors.Is(err, os.ErrInvalid) {
-		return err
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("organized-view parent contains a symlink or non-directory component: %s", path)
 	}
 	return nil
+}
+
+// safeRelative reports whether an archived path may be joined onto the staging
+// root. It must reject anything that would not stay strictly inside it.
+//
+// filepath.IsAbs alone is not enough on Windows, where "/etc/passwd" is rooted
+// but not absolute, because absolute there means a path that also names a
+// volume. A rooted path reaching filepath.Join would resolve against the
+// current volume rather than the staging directory, so rooted paths and paths
+// carrying a volume name are both refused explicitly.
+func safeRelative(path string) bool {
+	if path == "" {
+		return false
+	}
+	clean := filepath.Clean(filepath.FromSlash(path))
+	if clean == "." || clean == ".." {
+		return false
+	}
+	if filepath.IsAbs(clean) || filepath.VolumeName(clean) != "" {
+		return false
+	}
+	if strings.HasPrefix(clean, string(filepath.Separator)) {
+		return false
+	}
+	return !strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }
 
 func safeValue(value string) string {

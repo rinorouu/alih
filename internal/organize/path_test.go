@@ -289,8 +289,13 @@ func FuzzSafeRelativeNeverAcceptsAnEscape(f *testing.F) {
 		if filepath.IsAbs(cleaned) {
 			t.Fatalf("safeRelative accepted the absolute path %q", candidate)
 		}
-		joined := filepath.Join("/staging", cleaned)
-		if !strings.HasPrefix(joined, "/staging"+string(filepath.Separator)) && joined != "/staging" {
+		// The root has to be built rather than written as a literal: joining
+		// onto "/staging" on Windows yields a backslash-separated path that no
+		// longer shares the literal's prefix, which failed this assertion for
+		// candidates that never escaped anything.
+		root := filepath.Join(string(filepath.Separator), "staging")
+		joined := filepath.Join(root, cleaned)
+		if !strings.HasPrefix(joined, root+string(filepath.Separator)) && joined != root {
 			t.Fatalf("safeRelative accepted %q, which escapes to %q", candidate, joined)
 		}
 	})

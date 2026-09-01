@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -245,6 +246,18 @@ func (a *App) runBackup(args []string) int {
 	}
 	if err := ctx.Err(); err != nil {
 		return a.failBackupWorkingState(recorder, "report", state.StageReport, err, workingRoot, finalRoot, token)
+	}
+	// Publication must never consume something that is already there. POSIX
+	// refuses to rename a directory onto an existing file, but Windows renames
+	// with MOVEFILE_REPLACE_EXISTING and would delete a user's file to make
+	// room for the bundle. Checking first makes the refusal explicit and
+	// identical on every platform.
+	if _, err := os.Lstat(finalRoot); err == nil {
+		return a.failBackupWorkingState(recorder, "finalization", state.StageFinalize,
+			fmt.Errorf("publish completed backup: %s already exists", finalRoot), workingRoot, finalRoot, token)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return a.failBackupWorkingState(recorder, "finalization", state.StageFinalize,
+			fmt.Errorf("publish completed backup: %w", err), workingRoot, finalRoot, token)
 	}
 	if err := os.Rename(workingRoot, finalRoot); err != nil {
 		return a.failBackupWorkingState(recorder, "finalization", state.StageFinalize, fmt.Errorf("publish completed backup: %w", err), workingRoot, finalRoot, token)

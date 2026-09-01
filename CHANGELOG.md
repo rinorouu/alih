@@ -196,6 +196,25 @@ release.
   health: HEALTHY` cannot be acted on without knowing whose health it is.
 - A comment archived without a JSON body no longer stops an organized view from
   being generated.
+- Publication refuses to overwrite anything already at the backup destination.
+  POSIX will not rename a directory onto an existing file, but Windows renames
+  with replacement and would have deleted a file standing where the bundle was
+  about to go. The destination is now checked first, so the refusal is explicit
+  and identical on every platform.
+- `alih organize` works on macOS. Its path guard rejected a symbolic link
+  anywhere above the output, and on macOS `/var` and `/tmp` are links into
+  `/private`, so every temporary or scratch location was refused. It now checks
+  the directory the view is created in, which is the component a caller's own
+  path controls, and still refuses a symlinked output parent or archive.
+- `alih organize` works on Windows. Publication flushed the staging directory
+  through a directory handle, which Windows refuses with "Access is denied", so
+  no view could ever be published there.
+- An archived path that is rooted but not absolute — `/etc/passwd` on Windows,
+  which names no volume — is no longer treated as a safe relative path.
+- Test fixtures are marked so Git never rewrites their line endings. Without
+  that, a Windows checkout silently added a byte per line to the frozen
+  compatibility corpus, and every archive it seals stopped matching its own
+  checksums.
 - Adapter selection moved out of the core. Normalizers are keyed by the
   connector they declare, and the field interpreter is selected by the
   connector an archive itself records. An archive from a connector this build

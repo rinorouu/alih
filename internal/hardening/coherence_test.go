@@ -16,6 +16,8 @@ package hardening
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -44,8 +46,8 @@ import (
 func TestOneScopeIdentityRunsThroughEveryLayer(t *testing.T) {
 	t.Parallel()
 
-	scope := state.Scope{Connector: "clickup", WorkspaceID: "100", Destination: "/customer/Alih"}
-	source := event.Source{Connector: "clickup", WorkspaceID: "100", Destination: "/customer/Alih"}
+	scope := state.Scope{Connector: "clickup", WorkspaceID: "100", Destination: testAbsolutePath("customer", "Alih")}
+	source := event.Source{Connector: "clickup", WorkspaceID: "100", Destination: testAbsolutePath("customer", "Alih")}
 
 	// The event contract's source must carry exactly the scope's fields: no
 	// more, so nothing extra identifies an installation, and no fewer, so two
@@ -60,9 +62,9 @@ func TestOneScopeIdentityRunsThroughEveryLayer(t *testing.T) {
 	// would share a state file, a lock, and a history.
 	base := scope.Key()
 	for _, variant := range []state.Scope{
-		{Connector: "other", WorkspaceID: "100", Destination: "/customer/Alih"},
-		{Connector: "clickup", WorkspaceID: "200", Destination: "/customer/Alih"},
-		{Connector: "clickup", WorkspaceID: "100", Destination: "/elsewhere/Alih"},
+		{Connector: "other", WorkspaceID: "100", Destination: testAbsolutePath("customer", "Alih")},
+		{Connector: "clickup", WorkspaceID: "200", Destination: testAbsolutePath("customer", "Alih")},
+		{Connector: "clickup", WorkspaceID: "100", Destination: testAbsolutePath("elsewhere", "Alih")},
 	} {
 		if variant.Key() == base {
 			t.Errorf("scope %#v shares an identity with the base scope", variant)
@@ -124,7 +126,7 @@ func validEvent() event.Event {
 		OperationID:   "20260901T080000Z-0badc0de",
 		Sequence:      1,
 		RecordedAt:    time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC),
-		Source:        event.Source{Connector: "clickup", WorkspaceID: "100", Destination: "/customer/Alih"},
+		Source:        event.Source{Connector: "clickup", WorkspaceID: "100", Destination: testAbsolutePath("customer", "Alih")},
 		Operation:     state.OperationBackup,
 		Stage:         state.StagePrepare,
 		Outcome:       state.OutcomeStarted,
@@ -352,4 +354,17 @@ func sameStrings(first, second []string) bool {
 		}
 	}
 	return true
+}
+
+// testAbsolutePath builds a deterministic absolute path that satisfies
+// filepath.IsAbs on every supported platform. Scope identity is compared as a
+// string, so the value must not vary by machine, but Windows does not consider
+// a rooted path absolute unless it names a volume. Hard-coded POSIX literals
+// therefore failed validation on Windows while passing everywhere else.
+func testAbsolutePath(elements ...string) string {
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = `C:\`
+	}
+	return filepath.Join(append([]string{root}, elements...)...)
 }
