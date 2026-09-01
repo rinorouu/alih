@@ -16,6 +16,7 @@ package state
 
 import (
 	"errors"
+	"os"
 	"syscall"
 	"time"
 )
@@ -55,4 +56,34 @@ func isSharingViolation(err error) bool {
 	// ERROR_ACCESS_DENIED is what a denied replace reports; ERROR_SHARING_VIOLATION
 	// and ERROR_LOCK_VIOLATION are what a colliding open reports.
 	return errno == syscall.ERROR_ACCESS_DENIED || errno == syscall.Errno(32) || errno == syscall.Errno(33)
+}
+
+// openForRead opens a state file for reading while explicitly permitting the
+// file to be renamed or deleted underneath the handle.
+//
+// This is the part that matters. Go's os.Open does not request
+// FILE_SHARE_DELETE, so a reader blocks the writer's commit rename outright: a
+// process polling status could starve a backup's state write indefinitely, and
+// no amount of retrying on the writer's side fixes that. Granting delete
+// sharing lets the replace proceed. A handle already open keeps reading the
+// bytes it started with, and the next open sees the new record, so a reader
+// still never observes a half-written file.
+func openForRead(path string) (*os.File, error) {
+	pointer, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	handle, err := syscall.CreateFile(
+		pointer,
+		syscall.GENERIC_READ,
+		syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE,
+		nil,
+		syscall.OPEN_EXISTING,
+		syscall.FILE_ATTRIBUTE_NORMAL,
+		0,
+	)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(handle), path), nil
 }

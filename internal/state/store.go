@@ -142,7 +142,7 @@ func (s *Store) loadPath(path string) (Record, error) {
 	}
 	var file *os.File
 	err = retryWhileShared(func() error {
-		opened, openErr := os.Open(path)
+		opened, openErr := openForRead(path)
 		if openErr != nil {
 			return openErr
 		}

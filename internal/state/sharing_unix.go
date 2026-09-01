@@ -16,7 +16,13 @@
 
 package state
 
+import "os"
+
 // retryWhileShared runs an operation once. POSIX replaces a file by rename
 // regardless of who holds it open, so a reader and a writer never contend and
 // there is nothing transient to wait for.
 func retryWhileShared(operation func() error) error { return operation() }
+
+// openForRead opens a state file for reading. POSIX places no restriction on
+// replacing a file that is open, so the standard call is enough.
+func openForRead(path string) (*os.File, error) { return os.Open(path) }

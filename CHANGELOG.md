@@ -212,10 +212,13 @@ release.
 - An archived path that is rooted but not absolute — `/etc/passwd` on Windows,
   which names no volume — is no longer treated as a safe relative path.
 - Reading operational state while a run writes it no longer fails on Windows.
-  Windows will not replace a file another handle has open, so `alih status`
-  during a backup could report the state as unreadable when nothing was wrong.
-  Both sides now wait briefly for the contention to clear, bounded so state can
-  never hold a backup up. POSIX is unaffected and unchanged.
+  Windows will not replace a file another handle has open unless that handle
+  allowed it, so `alih status` during a backup could report state as unreadable
+  when nothing was wrong — and a process polling status could block the backup's
+  own state write indefinitely. State files are now opened so they may still be
+  replaced, and the commit additionally waits out brief contention from anything
+  else holding the file. A reader still never observes a half-written record.
+  POSIX is unaffected and unchanged.
 - Test fixtures are marked so Git never rewrites their line endings. Without
   that, a Windows checkout silently added a byte per line to the frozen
   compatibility corpus, and every archive it seals stopped matching its own
