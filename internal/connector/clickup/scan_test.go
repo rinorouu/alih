@@ -196,14 +196,28 @@ func TestScanTraversesHierarchyPaginationAndSupportedInventory(t *testing.T) {
 		t.Fatalf("Workspace = %#v, want %#v", result.Workspace, workspace)
 	}
 	want := connector.Inventory{
-		Spaces: 1, Folders: 1, Lists: 2, Tasks: 2, Subtasks: 1,
+		Containers: 2, Collections: 2, Records: 3, NestedRecords: 1,
 		Comments: 4, Attachments: 2, CustomFields: 4, Relationships: 2,
+		ContainerKinds: map[string]int{"space": 1, "folder": 1},
+		RecordKinds:    map[string]int{"task": 2, "subtask": 1},
 	}
-	if result.Inventory != want {
+	if !reflect.DeepEqual(result.Inventory, want) {
 		t.Fatalf("Inventory = %#v, want %#v", result.Inventory, want)
 	}
 	if len(result.Capabilities) == 0 {
 		t.Fatal("Capabilities are empty")
+	}
+	if result.CapabilitySchemaVersion != connector.CapabilitySchemaVersion {
+		t.Fatalf("capability schema version = %d", result.CapabilitySchemaVersion)
+	}
+	for _, capability := range result.Capabilities {
+		if capability.ID == connector.CapabilityAttachmentContent || capability.ID == connector.CapabilityRawEvidence {
+			if capability.Availability != connector.CapabilityAvailabilityUnknown {
+				t.Errorf("scan prematurely observed %s as %s", capability.ID, capability.Availability)
+			}
+		} else if capability.Availability != connector.CapabilityAvailabilityAvailable {
+			t.Errorf("completed scan capability %s = %s", capability.ID, capability.Availability)
+		}
 	}
 
 	gotCalls := append([]string(nil), fixture.taskCalls...)

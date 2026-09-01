@@ -164,6 +164,14 @@ macOS, Alih requires user-only directory and file permissions. On Windows, the
 file relies on the user profile's access controls. Alih does not encrypt this
 file, put it in an archive, or print the token in normal command output.
 
+If you would rather Alih kept no copy — because the token is injected per run
+from a secret store, or the machine is ephemeral — set
+`ALIH_SAVE_CREDENTIAL=0`. `backup`, `scan`, and `extract` then use the token in
+the environment and save nothing. `alih auth` still saves, because saving is
+what that command is for. Caching is never a precondition for the work either:
+if the credential has been verified but cannot be written to disk, Alih says so
+and carries on rather than losing a backup over it.
+
 Create and independently verify a backup:
 
 ```bash
@@ -187,15 +195,165 @@ The individual pipeline commands remain available for inspection,
 troubleshooting, development, and advanced use:
 
 ```text
-alih scan [--workspace-id ID]
+alih status [--json] [--refresh] [--reconcile]
+alih notify [--json]
+alih notify --test DESTINATION_ID [--json]
+alih schedule check [--json]
+alih schedule preview ID [--platform linux|darwin|windows] [--json]
+alih schedule inspect ID [--json]
+alih schedule install ID
+alih schedule remove ID
+alih scan [--workspace-id ID] [--json]
 alih extract --output PATH [--workspace-id ID]
 alih export --snapshot PATH [--output PATH]
 alih verify --archive PATH
 alih report --archive PATH [--format text|html|json] [--output PATH]
+alih organize --archive PATH --output PATH [--json]
 ```
 
-`scan` establishes an inventory and makes no portability claim. `extract`
-preserves raw evidence without building a portable model. `export` creates an
+`status` reports what Alih has recorded about its own runs: the last attempt,
+the last successful backup, the verification result and whether the archive it
+refers to is still unchanged, and the connector health observed at the time,
+each with its own age. It also summarises the recorded event history for each
+scope, as context that never decides the status. It reads local records only
+and makes no source request unless `--refresh` is given, which makes exactly
+one authentication request.
+`--reconcile` reads the backup destination, verifies every archive found there,
+and records what that proves, so backups Alih has no record of become visible
+again; failed and abandoned runs are reported but never counted as backups.
+Its exit code is `0` healthy, `1` needs attention, `3` nothing recorded that can
+be called healthy, and `4` local state that cannot be read.
+
+Notifications are disabled by default. `alih notify` validates the local
+configuration and makes no network request; `alih notify --test ID` is the
+explicit live-test path and replays the newest real recorded event selected by
+that destination. Normal operations deliver only the stable event types each
+destination explicitly allowlists. Delivery is synchronous, has bounded
+timeouts and retries, refuses redirects, and carries a stable idempotency key.
+A failed notification is visible in `alih status` but never changes a verified
+archive or turns a successful backup into a failed one.
+
+The one supported transport is an HTTPS webhook. Create
+`notifications.json` in Alih's user configuration directory: normally
+`~/.config/alih/` on Linux, `~/Library/Application Support/alih/` on macOS, or
+`%AppData%\alih\` on Windows. On Linux and macOS, keep the directory `0700` and
+the file `0600`.
+
+```json
+{
+  "schema_version": 1,
+  "destinations": [
+    {
+      "id": "ops",
+      "enabled": true,
+      "type": "webhook",
+      "url": "https://hooks.example.com/alih",
+      "events": [
+        "operation.failed",
+        "connector.unhealthy",
+        "authentication.problem"
+      ],
+      "secret_env": "ALIH_NOTIFY_OPS_TOKEN",
+      "timeout_seconds": 10,
+      "max_attempts": 3
+    }
+  ]
+}
+```
+
+`secret_env` is optional. When present, Alih reads that environment variable
+at delivery time and sends its value as a bearer token. Only the variable name
+is stored; its value must not be put in the JSON file. Status and command
+output show only the webhook scheme and host, never its path, query, fragment,
+bearer value, response body, or other destination-controlled text. Retryable
+delivery is attempted only during the current invocation; there is no hidden
+background worker or durable outbox. A receiving webhook should enforce the
+provided idempotency key if duplicate processing matters.
+
+Recurring backups use the operating system's user-level scheduler, not an Alih
+daemon: systemd user timers on Linux and WSL, launchd LaunchAgents on macOS,
+and per-user Task Scheduler tasks on Windows. Configuration is disabled until
+the user creates `schedules.json` beside `notifications.json`. The initial
+portable cadence is deliberately daily local civil time; the native scheduler
+owns daylight-saving transitions. `run_once` asks it to coalesce a missed
+trigger after sleep/offline time rather than queue every missed run.
+
+```json
+{
+  "schema_version": 1,
+  "schedules": [
+    {
+      "id": "daily-main",
+      "enabled": true,
+      "operation": "backup",
+      "connector": "clickup",
+      "workspace_id": "WORKSPACE_ID",
+      "destination": "/absolute/path/to/Alih",
+      "cadence": {
+        "frequency": "daily",
+        "at": "02:30",
+        "timezone": "local",
+        "missed_run_policy": "run_once"
+      }
+    }
+  ]
+}
+```
+
+On Windows, use an absolute drive path such as
+`C:\\Users\\YOUR_NAME\\Alih`. `alih schedule check` validates only the local
+file. `preview` prints deterministic artifacts and exact argument arrays
+without changing the machine. `install` and `remove` are the only mutating
+actions and always target the current user; `inspect` compares installed files
+and asks the native scheduler whether the task is registered.
+
+Generated scheduler files contain the absolute Alih executable, Workspace ID,
+and destination, but no token, bearer value, or environment secret. The
+scheduled account must already be able to read Alih's saved credential and
+write the destination. The executable's directory does not need to be in
+`PATH`; its absolute path and working directory are recorded. Locale is not
+used for cadence parsing, and timezone is the machine's local timezone. WSL
+requires a working systemd user session. Linux execution after logout may
+require an administrator to enable user lingering; Alih never escalates
+privileges automatically. The current macOS LaunchAgent and Windows
+InteractiveToken task run in the user's logged-in session.
+
+Every scheduled trigger invokes the ordinary `alih backup` pipeline, including
+independent verification, status, events, and optional notifications. A
+portable OS-handle lock covers connector + Workspace + destination. If another
+backup owns that scope, the new trigger exits non-zero as `SKIPPED`, records
+`OPERATION_OVERLAP`, and queues nothing. A crash or uncatchable termination
+releases the OS handle automatically; the retained lock file is inspection
+metadata and never acts as a stale lock.
+
+`organize` builds an optional, disposable browsing view beside a canonical
+archive: one directory per Workspace, container, and collection, a Markdown
+page per record, separately copied attachments, and a `provenance.json` index
+mapping every generated file back to its portable identifier, original source
+identifier, and raw evidence path. It is derived data for reading, not a
+restore source and not a ClickUp replica.
+
+The archive is independently verified before generation and again immediately
+before publication; only `VERIFIED` and `VERIFIED_WITH_LIMITATIONS` are
+accepted, and the disclosed limitations are repeated in the view itself. The
+canonical archive is opened read-only and is never modified. The view is built
+in a private staging directory and published with a single rename, so an
+interrupted run publishes nothing. The output must not already exist: Alih
+never merges into or edits a previous view, because regenerating one is
+cheaper than reconciling one. Two runs over the same archive produce identical
+content, so a view can be deleted and rebuilt at any time.
+
+Generated names keep the original Unicode text, without normalisation, and add
+a short prefix of the portable identifier so that two records with the same
+name — or names differing only in case — never collide. Characters Windows
+reserves are replaced, reserved basenames are escaped, and each component is
+length-bounded so the deepest generated path stays usable on all three
+supported platforms.
+
+`scan` establishes an inventory and makes no portability claim; `--json`
+prints that inventory together with the connector capability contract and
+the operational health assessment of the same run. `extract` preserves raw
+evidence without building a portable model. `export` creates an
 archive marked `CREATED_UNVERIFIED`; creating an archive is not the same as
 verifying it. `verify` and `report` read the archive without contacting or
 modifying the source.
@@ -213,11 +371,48 @@ archive/
 
 Every portable row retains its original source identifiers and a path into the
 raw evidence, allowing archived objects to be traced back to their source
-response.
+response. The portable model is source-neutral: containers, collections, and
+records, each keeping the connector's own name for what it is. `manifest.json`
+records neutral totals and the connector's own vocabulary beside them, so an
+archive describes its source in that source's words without Alih having to know
+them.
 
 The Recovery Report is written beside the archive rather than inside it. The
 archive is sealed by manifest checksums, so adding the report to it would make
 verification fail.
+
+`raw/` holds the provider's responses byte for byte, because that is what makes
+the archive provable. Those exact bytes include whatever ClickUp put in them,
+which for attachments is a short-lived signed download URL. Alih never writes
+its own token into an archive, and a signed provider URL never reaches
+`alih.db`, `manifest.json`, the verification result, the Recovery Report, or an
+organized view. Treat an archive as being as sensitive as the Workspace it came
+from, and share it accordingly.
+
+### Archive format compatibility
+
+`manifest.json` carries a schema version, and Alih states plainly which
+versions it reads.
+
+| | |
+| --- | --- |
+| Written by this version | schema 3 |
+| Read and verified by this version | schema 2 and 3 |
+
+An archive written by an older Alih keeps the format it was sealed with. Alih
+verifies, reports, and organizes it as it is, and never rewrites or upgrades it
+in place.
+
+Going the other way does not work, by design: **an Alih older than 0.2.5 will
+refuse a schema 3 archive.** It reports a failed `manifest_integrity` check,
+names the schema version it found and the one it supports, and exits non-zero.
+The archive is not damaged — the older binary cannot make claims about a format
+it does not know, so it declines to make any. Verify with 0.2.5 or later
+instead of downgrading.
+
+An archive whose schema is outside the readable range is refused explicitly and
+is never interpreted under whichever schema the running build happens to
+implement.
 
 ## Result states
 
@@ -252,7 +447,7 @@ turn unavailable source data into supported data.
 ## Current Alpha scope
 
 The Alpha has no web or desktop UI, Alih cloud backend, billing, telemetry,
-scheduled backups, continuous sync, restore workflow, cross-SaaS migration,
+resident scheduler, continuous sync, restore workflow, cross-SaaS migration,
 production OAuth onboarding, or additional connectors.
 
 ## Run Alih yourself

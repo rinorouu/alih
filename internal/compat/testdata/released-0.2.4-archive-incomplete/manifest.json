@@ -1,0 +1,200 @@
+{
+  "schema_version": 2,
+  "alih_version": "0.0.1",
+  "status": "INCOMPLETE",
+  "source_snapshot_completed_at": "2026-08-31T23:04:22.695615433Z",
+  "archive_completed_at": "2026-08-31T23:04:22.705949892Z",
+  "connector": "clickup",
+  "source": {
+    "id": "w1",
+    "name": "Fixture Workspace"
+  },
+  "extracted_by": {
+    "id": "u1",
+    "name": "Fixture User"
+  },
+  "input_snapshot": {
+    "logical_inventory_digest": "sha256:545b4d9cef03c912713517faf52cecac5fb44e3b85ed59fab49c7dfbf0e37c99",
+    "status": "COMPLETE",
+    "atomic": false
+  },
+  "inventory": {
+    "attachments": {
+      "expected": 1,
+      "archived": 0,
+      "unresolved": 1
+    },
+    "comments": {
+      "expected": 2,
+      "archived": 2,
+      "unresolved": 0
+    },
+    "custom_fields": {
+      "expected": 1,
+      "archived": 1,
+      "unresolved": 0
+    },
+    "folders": {
+      "expected": 0,
+      "archived": 0,
+      "unresolved": 0
+    },
+    "lists": {
+      "expected": 1,
+      "archived": 1,
+      "unresolved": 0
+    },
+    "relationships": {
+      "expected": 1,
+      "archived": 1,
+      "unresolved": 0
+    },
+    "spaces": {
+      "expected": 1,
+      "archived": 1,
+      "unresolved": 0
+    },
+    "subtasks": {
+      "expected": 1,
+      "archived": 1,
+      "unresolved": 0
+    },
+    "tasks": {
+      "expected": 2,
+      "archived": 2,
+      "unresolved": 0
+    }
+  },
+  "observed_entities": {
+    "identities": 1,
+    "record_field_values": 1,
+    "record_identity_roles": 4,
+    "record_tags": 1,
+    "workspaces": 1
+  },
+  "capabilities": [
+    {
+      "name": "Custom fields",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Task attachments",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Task comments",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Task relationships",
+      "state": "PARTIAL",
+      "note": "dependencies only"
+    },
+    {
+      "name": "Tasks/subtasks",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    }
+  ],
+  "attachments": [
+    {
+      "id": "alih_2395cda3ef0c792aad5f0e7d02d7fba9fbff354240b7211f1c99fe3e7559937d",
+      "source_id": "a1",
+      "record_id": "alih_7cb65357d0c7194951d84678bddb5714f691b4b45c2d38e7d14852d6a7200803",
+      "filename": "file.txt",
+      "media_type": "text/plain",
+      "expected_size": 20,
+      "status": "UNRESOLVED",
+      "local_path": null,
+      "archived_size": null,
+      "checksum": null,
+      "error": "attachment endpoint returned HTTP 503"
+    }
+  ],
+  "files": [
+    {
+      "path": "alih.db",
+      "bytes": 147456,
+      "checksum": "sha256:6888a45b73c39beb695a0943fb342e5dd40944fbd19a6b4b7d5dbf2f235975d2"
+    },
+    {
+      "path": "raw/inventory.json",
+      "bytes": 2099,
+      "checksum": "sha256:a6a6027d1289ab2aec6dca5c596d8fe1f99870cd62bda788cf971949e65da568"
+    },
+    {
+      "path": "raw/raw/000001.json",
+      "bytes": 39,
+      "checksum": "sha256:faac909dcd33cc7b19151fd2ef3dadf32b946349b9a589b72ba03dd3c39f52b1"
+    },
+    {
+      "path": "raw/raw/000002.json",
+      "bytes": 37,
+      "checksum": "sha256:32ce990934f0353415a7045cee48761552f0a20b651fd7647445615198124f01"
+    },
+    {
+      "path": "raw/raw/000003.json",
+      "bytes": 181,
+      "checksum": "sha256:7cc152c8eed7b9c7196c6563f68d2ac20e0abbc8ef7e555e7661e15a4c07af81"
+    },
+    {
+      "path": "raw/raw/000004.json",
+      "bytes": 615,
+      "checksum": "sha256:61ed4e247852a2b4a13333016a5caef67ae8aa183100b8cea9412e2fc6a90c92"
+    },
+    {
+      "path": "raw/raw/000005.json",
+      "bytes": 100,
+      "checksum": "sha256:664b2ac2c16f91cb0b66f5f22e1264d089c0baf9c375b92ebefcf181a30aa8e0"
+    },
+    {
+      "path": "raw/raw/000006.json",
+      "bytes": 102,
+      "checksum": "sha256:deb737e8e570c2c979606b59f18a74a6225c047565f21ddea150412737df7589"
+    },
+    {
+      "path": "raw/raw/000007.json",
+      "bytes": 166,
+      "checksum": "sha256:d056751b25163dee73bd55fc4634ee0d80d80fe8fba9944b3741494e6dbf64fa"
+    },
+    {
+      "path": "raw/raw/000008.json",
+      "bytes": 137,
+      "checksum": "sha256:0cc512edb756d6573ba58182c0b251ecd37e5811d3b491b6e112b50040c91cd6"
+    },
+    {
+      "path": "raw/requests.json",
+      "bytes": 2635,
+      "checksum": "sha256:1db15a5ede55339b72dee986e39de42eb0d2f57d5103c259907f4e46daff7c2e"
+    },
+    {
+      "path": "raw/run.json",
+      "bytes": 783,
+      "checksum": "sha256:ce8ea254ec371dd186a3a103f7765286b71957a1afb112110fdab6b724cc5cb7"
+    },
+    {
+      "path": "schema.json",
+      "bytes": 23626,
+      "checksum": "sha256:47b5e529131a1b370a890661e01c7cbfa35f8a203fcd7f506bc7297f6a8746d2"
+    }
+  ],
+  "limitations": [
+    "Archive creation completed without independent M5 verification; verification status is NOT_RUN.",
+    "Custom Field values are observed values only; Alih does not claim executable ClickUp formula or computed-field semantics.",
+    "The source API does not provide an atomic snapshot; records may reflect different moments within the M3 traversal."
+  ],
+  "discrepancies": [
+    {
+      "kind": "ATTACHMENT_UNRESOLVED",
+      "source_id": "a1",
+      "message": "attachment endpoint returned HTTP 503"
+    }
+  ],
+  "verification": {
+    "status": "NOT_RUN",
+    "note": "Independent M5 verification has not been implemented or executed."
+  }
+}

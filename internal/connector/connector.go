@@ -16,7 +16,10 @@
 package connector
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/url"
 )
 
@@ -42,8 +45,9 @@ type Workspace struct {
 // Authentication is the source-neutral result of credential validation and
 // workspace discovery. It is intentionally limited to the M1 contract.
 type Authentication struct {
-	Identity   Identity
-	Workspaces []Workspace
+	Identity   Identity              `json:"identity"`
+	Workspaces []Workspace           `json:"workspaces"`
+	Assessment OperationalAssessment `json:"operational_assessment"`
 }
 
 // Authenticator validates a credential and discovers the identity and
@@ -54,8 +58,30 @@ type Authenticator interface {
 }
 
 // Inventory contains source counts established by a completed M2 traversal.
-// Comments and attachments are deliberately scoped to tasks in V0 M2.
+//
+// The totals are provider-neutral because Core reconciles against them and must
+// not require a connector to describe its objects in another provider's words.
+// ContainerKinds and RecordKinds carry the connector's own vocabulary and its
+// counts; Core never interprets those keys, it only checks that the portable
+// rows carrying each kind add up to what the connector said.
 type Inventory struct {
+	Containers    int `json:"containers"`
+	Collections   int `json:"collections"`
+	Records       int `json:"records"`
+	NestedRecords int `json:"nested_records"`
+	Comments      int `json:"comments"`
+	Attachments   int `json:"attachments"`
+	CustomFields  int `json:"custom_fields"`
+	Relationships int `json:"relationships"`
+
+	ContainerKinds map[string]int `json:"container_kinds,omitempty"`
+	RecordKinds    map[string]int `json:"record_kinds,omitempty"`
+}
+
+// legacyInventory is the vocabulary Alih used before the portable model was
+// made provider-neutral. It is read, never written: a snapshot recorded by an
+// earlier release must keep meaning exactly what it meant when it was sealed.
+type legacyInventory struct {
 	Spaces        int `json:"spaces"`
 	Folders       int `json:"folders"`
 	Lists         int `json:"lists"`
@@ -65,6 +91,73 @@ type Inventory struct {
 	Attachments   int `json:"attachments"`
 	CustomFields  int `json:"custom_fields"`
 	Relationships int `json:"relationships"`
+}
+
+// UnmarshalJSON reads either vocabulary. A legacy document is mapped onto the
+// neutral totals with its original kind names preserved, so nothing an older
+// release recorded is lost or reinterpreted.
+func (inventory *Inventory) UnmarshalJSON(content []byte) error {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(content, &probe); err != nil {
+		return err
+	}
+	_, hasSpaces := probe["spaces"]
+	_, hasLists := probe["lists"]
+	if hasSpaces || hasLists {
+		var legacy legacyInventory
+		decoder := json.NewDecoder(bytes.NewReader(content))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&legacy); err != nil {
+			return fmt.Errorf("decode legacy inventory: %w", err)
+		}
+		*inventory = legacy.neutral()
+		return nil
+	}
+
+	type plain Inventory
+	var decoded plain
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*inventory = Inventory(decoded)
+	return nil
+}
+
+// neutral projects the legacy vocabulary onto the neutral one without losing
+// the distinction between a space and a folder, or a task and a subtask.
+func (legacy legacyInventory) neutral() Inventory {
+	inventory := Inventory{
+		Containers:    legacy.Spaces + legacy.Folders,
+		Collections:   legacy.Lists,
+		Records:       legacy.Tasks + legacy.Subtasks,
+		NestedRecords: legacy.Subtasks,
+		Comments:      legacy.Comments,
+		Attachments:   legacy.Attachments,
+		CustomFields:  legacy.CustomFields,
+		Relationships: legacy.Relationships,
+	}
+	inventory.ContainerKinds = map[string]int{"space": legacy.Spaces, "folder": legacy.Folders}
+	inventory.RecordKinds = map[string]int{"task": legacy.Tasks, "subtask": legacy.Subtasks}
+	return inventory
+}
+
+// Legacy projects an inventory back into the vocabulary an earlier release
+// recorded. It exists so a digest taken over a legacy snapshot can be
+// reproduced byte for byte, and it is meaningful only for such a snapshot.
+func (inventory Inventory) Legacy() any {
+	return legacyInventory{
+		Spaces:        inventory.ContainerKinds["space"],
+		Folders:       inventory.ContainerKinds["folder"],
+		Lists:         inventory.Collections,
+		Tasks:         inventory.RecordKinds["task"],
+		Subtasks:      inventory.RecordKinds["subtask"],
+		Comments:      inventory.Comments,
+		Attachments:   inventory.Attachments,
+		CustomFields:  inventory.CustomFields,
+		Relationships: inventory.Relationships,
+	}
 }
 
 // CapabilityState records what the connector can establish without turning
@@ -82,17 +175,41 @@ const (
 
 // Capability describes one explicitly scoped source capability.
 type Capability struct {
-	Name  string          `json:"name"`
+	// ID is the stable provider-neutral domain identity. It is absent only on
+	// artifacts created before capability contract version 1.
+	ID CapabilityID `json:"id,omitempty"`
+	// Name is a human-facing label and must never be used as machine identity.
+	Name string `json:"name"`
+	// Requirement states whether failure of this capability prevents a clean
+	// operation within the connector's declared scope.
+	Requirement CapabilityRequirement `json:"requirement,omitempty"`
+	// Implementation describes connector support independently from whether a
+	// particular run could obtain the capability.
+	Implementation CapabilityState `json:"implementation,omitempty"`
+	// Availability is the observation made by this run. UNKNOWN means the run
+	// did not establish availability; it does not mean unsupported.
+	Availability CapabilityAvailability `json:"availability,omitempty"`
+	// State is the legacy compatibility projection of Implementation. New
+	// capability contract v1 records must keep the two equal.
 	State CapabilityState `json:"state"`
 	Note  string          `json:"note"`
+}
+
+// CapabilityProvider declares the provider-neutral capabilities implemented
+// by a connector without requiring Core to know provider endpoints.
+type CapabilityProvider interface {
+	Connector
+	CapabilityContract() CapabilityContract
 }
 
 // ScanResult is returned only after every supported M2 traversal terminates
 // successfully. A connector error means no trustworthy inventory is available.
 type ScanResult struct {
-	Workspace    Workspace
-	Inventory    Inventory
-	Capabilities []Capability
+	Workspace               Workspace             `json:"workspace"`
+	Inventory               Inventory             `json:"inventory"`
+	CapabilitySchemaVersion int                   `json:"capability_schema_version"`
+	Capabilities            []Capability          `json:"capabilities"`
+	Assessment              OperationalAssessment `json:"operational_assessment"`
 }
 
 // Scanner inventories one authenticated Workspace through read-only source

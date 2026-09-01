@@ -156,7 +156,13 @@ func (v *verification) checkRawEvidence(manifest archive.Manifest, manifestOK bo
 		if evidence.LogicalDigest != manifest.InputSnapshot.LogicalDigest {
 			findings = append(findings, fmt.Sprintf("recomputed raw logical inventory digest %s does not match the manifest digest %s", evidence.LogicalDigest, manifest.InputSnapshot.LogicalDigest))
 		}
-		findings = append(findings, compareCapabilities(evidence.Capabilities, manifest.Capabilities)...)
+		if evidence.CapabilityDigest != manifest.InputSnapshot.CapabilityDigest {
+			findings = append(findings, fmt.Sprintf("recomputed raw capability digest %s does not match the manifest digest %s", evidence.CapabilityDigest, manifest.InputSnapshot.CapabilityDigest))
+		}
+		findings = append(findings, compareCapabilities(
+			evidence.CapabilitySchemaVersion, evidence.Capabilities,
+			manifest.CapabilitySchemaVersion, manifest.Capabilities,
+		)...)
 	}
 	ok := v.decide("raw_evidence_integrity",
 		fmt.Sprintf("archived raw M3 evidence revalidates: %d raw responses match their recorded checksums and the logical inventory digest is reproducible", len(evidence.Responses)),
@@ -165,7 +171,13 @@ func (v *verification) checkRawEvidence(manifest archive.Manifest, manifestOK bo
 	return evidence, ok
 }
 
-func compareCapabilities(expected, actual []connector.Capability) []string {
+func compareCapabilities(expectedVersion int, expected []connector.Capability, actualVersion int, actual []connector.Capability) []string {
+	if expectedVersion != actualVersion {
+		return []string{fmt.Sprintf("raw capability schema version %d does not match manifest version %d", expectedVersion, actualVersion)}
+	}
+	if expectedVersion == connector.CapabilitySchemaVersion {
+		return compareVersionedCapabilities(expected, actual)
+	}
 	format := func(capability connector.Capability) string {
 		return fmt.Sprintf("%s=%s", capability.Name, capability.State)
 	}
@@ -186,6 +198,46 @@ func compareCapabilities(expected, actual []connector.Capability) []string {
 	for value := range actualSet {
 		if _, present := expectedSet[value]; !present {
 			findings = append(findings, fmt.Sprintf("manifest declares capability %s that the raw evidence does not record", value))
+		}
+	}
+	return findings
+}
+
+func compareVersionedCapabilities(expected, actual []connector.Capability) []string {
+	var findings []string
+	if err := connector.ValidateCapabilities(connector.CapabilitySchemaVersion, expected); err != nil {
+		findings = append(findings, "raw capability contract is invalid: "+err.Error())
+	}
+	if err := connector.ValidateCapabilities(connector.CapabilitySchemaVersion, actual); err != nil {
+		findings = append(findings, "manifest capability contract is invalid: "+err.Error())
+	}
+	expectedByID := make(map[connector.CapabilityID]connector.Capability, len(expected))
+	for _, capability := range expected {
+		expectedByID[capability.ID] = capability
+	}
+	actualByID := make(map[connector.CapabilityID]connector.Capability, len(actual))
+	for _, capability := range actual {
+		actualByID[capability.ID] = capability
+	}
+	for id, wanted := range expectedByID {
+		got, present := actualByID[id]
+		if !present {
+			findings = append(findings, fmt.Sprintf("source capability %s recorded in the raw evidence is absent from the manifest", id))
+			continue
+		}
+		if wanted.Name != got.Name || wanted.Requirement != got.Requirement || wanted.Implementation != got.Implementation || wanted.State != got.State || wanted.Note != got.Note {
+			findings = append(findings, fmt.Sprintf("manifest changed the declared contract for capability %s", id))
+		}
+		// M4 may refine an extraction-time UNKNOWN observation (currently
+		// attachment content) after doing the work. Established M3 observations
+		// must otherwise remain unchanged.
+		if wanted.Availability != connector.CapabilityAvailabilityUnknown && wanted.Availability != got.Availability {
+			findings = append(findings, fmt.Sprintf("manifest changed capability %s availability from %s to %s", id, wanted.Availability, got.Availability))
+		}
+	}
+	for id := range actualByID {
+		if _, present := expectedByID[id]; !present {
+			findings = append(findings, fmt.Sprintf("manifest declares capability %s that the raw evidence does not record", id))
 		}
 	}
 	return findings

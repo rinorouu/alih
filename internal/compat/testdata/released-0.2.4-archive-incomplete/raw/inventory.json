@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "kind": "raw_source_inventory",
+  "connector": "clickup",
+  "workspace_id": "w1",
+  "counts": {
+    "spaces": 1,
+    "folders": 0,
+    "lists": 1,
+    "tasks": 2,
+    "subtasks": 1,
+    "comments": 2,
+    "attachments": 1,
+    "custom_fields": 1,
+    "relationships": 1
+  },
+  "capabilities": [
+    {
+      "name": "Tasks/subtasks",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Task comments",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Task attachments",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Custom fields",
+      "state": "SUPPORTED",
+      "note": "fixture"
+    },
+    {
+      "name": "Task relationships",
+      "state": "PARTIAL",
+      "note": "dependencies only"
+    }
+  ],
+  "source_objects": [
+    {
+      "type": "attachment",
+      "id": "a1",
+      "parent_type": "task",
+      "parent_id": "t1"
+    },
+    {
+      "type": "comment",
+      "id": "c1",
+      "parent_type": "task",
+      "parent_id": "t1"
+    },
+    {
+      "type": "comment",
+      "id": "c2",
+      "parent_type": "comment",
+      "parent_id": "c1"
+    },
+    {
+      "type": "custom_field",
+      "id": "f1"
+    },
+    {
+      "type": "list",
+      "id": "l1",
+      "parent_type": "space",
+      "parent_id": "s1"
+    },
+    {
+      "type": "relationship.task_dependency",
+      "id": "t1-\u003et2",
+      "parent_type": "task",
+      "parent_id": "t1",
+      "composite": true
+    },
+    {
+      "type": "space",
+      "id": "s1",
+      "parent_type": "workspace",
+      "parent_id": "w1"
+    },
+    {
+      "type": "subtask",
+      "id": "t3",
+      "parent_type": "task",
+      "parent_id": "t1"
+    },
+    {
+      "type": "task",
+      "id": "t1",
+      "parent_type": "list",
+      "parent_id": "l1"
+    },
+    {
+      "type": "task",
+      "id": "t2",
+      "parent_type": "list",
+      "parent_id": "l1"
+    },
+    {
+      "type": "workspace",
+      "id": "w1"
+    }
+  ],
+  "logical_digest": "sha256:545b4d9cef03c912713517faf52cecac5fb44e3b85ed59fab49c7dfbf0e37c99"
+}

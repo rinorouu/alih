@@ -149,8 +149,9 @@ func NormalizeSnapshot(evidence snapshot.Evidence) (model.Archive, error) {
 	}
 
 	portable := model.Archive{
-		Connector:    provider,
-		Capabilities: append([]connector.Capability(nil), evidence.Capabilities...),
+		Connector:               provider,
+		CapabilitySchemaVersion: evidence.CapabilitySchemaVersion,
+		Capabilities:            connector.CanonicalCapabilities(evidence.CapabilitySchemaVersion, evidence.Capabilities),
 		Limitations: []string{
 			"The source API does not provide an atomic snapshot; records may reflect different moments within the M3 traversal.",
 			"Custom Field values are observed values only; Alih does not claim executable ClickUp formula or computed-field semantics.",
@@ -909,7 +910,7 @@ func sortPortable(portable *model.Archive) {
 	})
 	sort.Slice(portable.Relationships, func(i, j int) bool { return portable.Relationships[i].ID < portable.Relationships[j].ID })
 	sort.Slice(portable.Attachments, func(i, j int) bool { return portable.Attachments[i].ID < portable.Attachments[j].ID })
-	sort.Slice(portable.Capabilities, func(i, j int) bool { return portable.Capabilities[i].Name < portable.Capabilities[j].Name })
+	portable.Capabilities = connector.CanonicalCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities)
 	sort.Strings(portable.Limitations)
 }
 
@@ -1134,4 +1135,20 @@ func taskCollectionSourceID(records map[string]connector.SourceObject, id string
 		return object.ParentID, nil
 	}
 	return taskCollectionSourceID(records, object.ParentID, seen)
+}
+
+// Normalizer adapts the package-level NormalizeSnapshot into the interface the
+// M3-to-M4 coordinator selects by connector name, so Core can hold a set of
+// adapters without importing any of them.
+type Normalizer struct{}
+
+// Connector names the connector this adapter normalizes.
+func (Normalizer) Connector() string { return "clickup" }
+
+// DisplayName is the human name recorded in archives this adapter produces.
+func (Normalizer) DisplayName() string { return "ClickUp" }
+
+// NormalizeSnapshot turns ClickUp raw evidence into the portable model.
+func (Normalizer) NormalizeSnapshot(evidence snapshot.Evidence) (model.Archive, error) {
+	return NormalizeSnapshot(evidence)
 }

@@ -17,7 +17,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -29,9 +31,13 @@ import (
 
 	"alih/internal/archive"
 	"alih/internal/connector"
+	"alih/internal/connector/clickup"
+	"alih/internal/event"
 	coreexporter "alih/internal/exporter"
+	"alih/internal/oplock"
 	"alih/internal/report"
 	corereporter "alih/internal/reporter"
+	"alih/internal/state"
 	coreverifier "alih/internal/verifier"
 	"alih/internal/verify"
 )
@@ -94,10 +100,12 @@ func (s *backupExtractor) Extract(_ context.Context, _ string, workspace connect
 }
 
 type backupExporter struct {
-	recorder *backupRecorder
-	status   string
-	err      error
-	path     string
+	recorder  *backupRecorder
+	status    string
+	err       error
+	path      string
+	connector string
+	workspace connector.Workspace
 }
 
 func (s *backupExporter) Export(_ context.Context, _, outputPath, _ string) (archive.Summary, error) {
@@ -109,7 +117,30 @@ func (s *backupExporter) Export(_ context.Context, _, outputPath, _ string) (arc
 	if err := os.Mkdir(outputPath, 0o700); err != nil {
 		return archive.Summary{}, err
 	}
-	return archive.Summary{Path: outputPath, Status: s.status}, nil
+	// A real export seals a manifest carrying the assessment of the run that
+	// produced the archive; the stub writes the smallest truthful equivalent so
+	// state recording and reconciliation are exercised here.
+	assessment, err := connector.HealthyAssessment("clickup", connector.HealthBasisBackup, alphaTestTime,
+		connector.AuthenticationAuthenticated, nil)
+	if err != nil {
+		return archive.Summary{}, err
+	}
+	encodedAssessment, err := json.Marshal(assessment)
+	if err != nil {
+		return archive.Summary{}, err
+	}
+	sealed := alphaTestTime.Format(time.RFC3339)
+	manifest := fmt.Sprintf(
+		`{"schema_version":%d,"alih_version":"0.0.1","status":%q,"connector":%q,`+
+			`"source":{"id":%q,"name":%q},"source_snapshot_completed_at":%q,"archive_completed_at":%q,`+
+			`"operational_assessment":%s,`+
+			`"input_snapshot":{"logical_inventory_digest":"sha256:%s","status":"COMPLETE","atomic":false}}`,
+		archive.ArchiveSchemaVersion, s.status, s.connector, s.workspace.ID, s.workspace.Name,
+		sealed, sealed, encodedAssessment, strings.Repeat("ab", 32))
+	if err := os.WriteFile(filepath.Join(outputPath, "manifest.json"), []byte(manifest), 0o600); err != nil {
+		return archive.Summary{}, err
+	}
+	return archive.Summary{Path: outputPath, Status: s.status, OperationalAssessment: &assessment}, nil
 }
 
 type backupVerifier struct {
@@ -130,11 +161,18 @@ type backupReporter struct {
 	result   string
 	err      error
 	path     string
+	// before is a fault-injection seam. It runs after reporting has been asked
+	// for and before the bundle is published, which is the only window in which
+	// a test can make the final publication itself fail.
+	before func()
 }
 
 func (s *backupReporter) Report(path string) (report.Document, error) {
 	s.recorder.call("report")
 	s.path = path
+	if s.before != nil {
+		s.before()
+	}
 	return report.Document{
 		SchemaVersion: report.SchemaVersion,
 		Kind:          report.Kind,
@@ -150,17 +188,18 @@ func (s *backupReporter) Report(path string) (report.Document, error) {
 }
 
 type backupHarness struct {
-	app       *App
-	stdout    *bytes.Buffer
-	stderr    *bytes.Buffer
-	recorder  *backupRecorder
-	scanner   *backupScanner
-	extractor *backupExtractor
-	exporter  *backupExporter
-	verifier  *backupVerifier
-	reporter  *backupReporter
-	root      string
-	token     string
+	app           *App
+	stdout        *bytes.Buffer
+	stderr        *bytes.Buffer
+	recorder      *backupRecorder
+	authenticator *backupAuthenticator
+	scanner       *backupScanner
+	extractor     *backupExtractor
+	exporter      *backupExporter
+	verifier      *backupVerifier
+	reporter      *backupReporter
+	root          string
+	token         string
 }
 
 func newBackupHarness(t *testing.T, result string) *backupHarness {
@@ -173,7 +212,10 @@ func newBackupHarness(t *testing.T, result string) *backupHarness {
 	}}
 	scanner := &backupScanner{recorder: recorder, result: connector.ScanResult{Workspace: workspace}}
 	extractor := &backupExtractor{recorder: recorder, result: connector.ExtractionResult{ScanResult: connector.ScanResult{Workspace: workspace}}}
-	exporter := &backupExporter{recorder: recorder, status: archive.StatusCreatedUnverified}
+	exporter := &backupExporter{
+		recorder: recorder, status: archive.StatusCreatedUnverified,
+		connector: "clickup", workspace: workspace,
+	}
 	verifier := &backupVerifier{recorder: recorder, result: result}
 	reporter := &backupReporter{recorder: recorder, result: result}
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
@@ -185,7 +227,8 @@ func newBackupHarness(t *testing.T, result string) *backupHarness {
 		Now: func() time.Time { return alphaTestTime },
 	})
 	return &backupHarness{
-		app: app, stdout: stdout, stderr: stderr, recorder: recorder, scanner: scanner,
+		app: app, stdout: stdout, stderr: stderr, recorder: recorder,
+		authenticator: authenticator, scanner: scanner,
 		extractor: extractor, exporter: exporter, verifier: verifier, reporter: reporter,
 		root: root, token: token,
 	}
@@ -240,6 +283,123 @@ func TestBackupHappyPathUsesExistingPipelineAndPublishesVerifiedBundle(t *testin
 	}
 }
 
+func TestBackupRefusesOverlapBeforeEnteringThePipeline(t *testing.T) {
+	t.Parallel()
+	h := newBackupHarness(t, verify.ResultVerified)
+	h.app.options.StateRoot = filepath.Join(t.TempDir(), "state")
+	scope := backupScope("clickup", "100", h.root)
+	held, err := oplock.Acquire(filepath.Join(h.root, ".alih-locks"), scope,
+		"20260901T090000Z-holder", "dev", alphaTestTime)
+	if err != nil {
+		t.Fatalf("hold lock: %v", err)
+	}
+	defer held.Release()
+	if code := h.app.Run([]string{"backup", "--schedule-id", "daily-main"}); code != 1 {
+		t.Fatalf("overlapping backup code=%d stdout=%s stderr=%s", code, h.stdout.String(), h.stderr.String())
+	}
+	if h.scanner.workspace.ID != "" || h.extractor.workspace.ID != "" || h.exporter.path != "" {
+		t.Fatalf("overlap entered pipeline: scan=%#v extract=%#v export=%q",
+			h.scanner.workspace, h.extractor.workspace, h.exporter.path)
+	}
+	if !strings.Contains(h.stderr.String(), "operation scope is already locked") ||
+		!strings.Contains(h.stderr.String(), "Backup was not completed") {
+		t.Fatalf("overlap was not explained: %s", h.stderr.String())
+	}
+	record, err := stateStoreAt(t, h.app.options.StateRoot).Load(scope)
+	if err != nil {
+		t.Fatalf("load overlap state: %v", err)
+	}
+	if record.LastAttempt == nil || record.LastAttempt.Outcome != state.OutcomeSkipped ||
+		record.LastAttempt.ScheduleID != "daily-main" || record.LastAttempt.SkipReason != "OPERATION_OVERLAP" {
+		t.Fatalf("overlap state = %#v", record.LastAttempt)
+	}
+	history, _, err := event.Read(h.app.options.StateRoot)
+	if err != nil {
+		t.Fatalf("read overlap events: %v", err)
+	}
+	foundSkip := false
+	for _, entry := range history {
+		if entry.Type == event.TypeOperationSkipped && entry.Metadata["schedule_id"] == "daily-main" {
+			foundSkip = true
+		}
+	}
+	if !foundSkip {
+		t.Fatalf("scheduled skip event missing: %#v", history)
+	}
+}
+
+func TestBackupDestinationFlagIsAbsoluteAndOverridesTheDefault(t *testing.T) {
+	t.Parallel()
+	h := newBackupHarness(t, verify.ResultVerified)
+	if code := h.app.Run([]string{"backup", "--destination", "relative"}); code != 1 {
+		t.Fatalf("relative destination code=%d stderr=%s", code, h.stderr.String())
+	}
+
+	h = newBackupHarness(t, verify.ResultVerified)
+	destination := filepath.Join(t.TempDir(), "scheduled-backups")
+	if code := h.app.Run([]string{"backup", "--destination", destination}); code != 0 {
+		t.Fatalf("absolute destination code=%d stderr=%s", code, h.stderr.String())
+	}
+	archivePath := filepath.Join(destination, "Example-Workspace", "2026-08-30T123000Z", backupArchiveDirectory)
+	if _, err := os.Stat(filepath.Join(archivePath, state.ManifestFilename)); err != nil {
+		t.Fatalf("archive was not published under --destination: %v", err)
+	}
+}
+
+func TestScheduledBackupUsesTheSamePipelineAndCorrelatesStateAndEvents(t *testing.T) {
+	t.Parallel()
+	h := newBackupHarness(t, verify.ResultVerified)
+	stateRoot := filepath.Join(t.TempDir(), "state")
+	h.app.options.StateRoot = stateRoot
+	if code := h.app.Run([]string{"backup", "--schedule-id", "daily-main"}); code != 0 {
+		t.Fatalf("scheduled backup code=%d stderr=%s", code, h.stderr.String())
+	}
+	scope := backupScope("clickup", "100", h.root)
+	record, err := stateStoreAt(t, stateRoot).Load(scope)
+	if err != nil {
+		t.Fatalf("load scheduled state: %v", err)
+	}
+	if record.LastSuccess == nil || record.LastSuccess.ScheduleID != "daily-main" ||
+		record.LastSuccess.Outcome != state.OutcomeSucceeded {
+		t.Fatalf("scheduled success = %#v", record.LastSuccess)
+	}
+	history, _, err := event.Read(stateRoot)
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	started, completed := false, false
+	for _, entry := range history {
+		if entry.Metadata["schedule_id"] != "daily-main" {
+			continue
+		}
+		started = started || entry.Type == event.TypeOperationStarted
+		completed = completed || entry.Type == event.TypeOperationCompleted
+	}
+	if !started || !completed {
+		t.Fatalf("scheduled event correlation missing: %#v", history)
+	}
+	if !reflect.DeepEqual(h.recorder.calls, []string{"auth", "scan", "extract", "export", "verify", "report"}) {
+		t.Fatalf("scheduled run used another pipeline: %v", h.recorder.calls)
+	}
+}
+
+func TestFailedBackupReleasesItsOperationLock(t *testing.T) {
+	t.Parallel()
+	h := newBackupHarness(t, verify.ResultVerified)
+	h.app.options.StateRoot = filepath.Join(t.TempDir(), "state")
+	h.exporter.err = errors.New("injected export failure")
+	if code := h.app.Run([]string{"backup", "--schedule-id", "daily-main"}); code != 1 {
+		t.Fatalf("failed backup code=%d", code)
+	}
+	scope := backupScope("clickup", "100", h.root)
+	lock, err := oplock.Acquire(filepath.Join(h.root, ".alih-locks"), scope,
+		"20260901T100000Z-next", "dev", alphaTestTime.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("failed backup left its operation lock held: %v", err)
+	}
+	_ = lock.Release()
+}
+
 func TestBackupRunsTheExistingM3ThroughM6CoreImplementations(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "Alih")
@@ -258,13 +418,13 @@ func TestBackupRunsTheExistingM3ThroughM6CoreImplementations(t *testing.T) {
 		ScanResult:    scanner.result,
 		SourceObjects: []connector.SourceObject{{Type: "workspace", ID: workspace.ID}},
 	}}
-	independentVerifier := coreverifier.New()
+	independentVerifier := coreverifier.New(clickup.FieldSemantics{})
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	app := New(stdout, stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
 		Authenticator: authenticator,
 		Scanner:       scanner,
 		Extractor:     extractor,
-		Exporter:      coreexporter.New(nil),
+		Exporter:      coreexporter.New(nil, clickup.Normalizer{}),
 		Verifier:      independentVerifier,
 		Reporter:      corereporter.New(independentVerifier),
 		CredentialStore: &stubCredentialStore{

@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package exporter coordinates the M3-to-M4 boundary without putting
-// ClickUp-specific normalization inside the core archive writer.
+// Package exporter coordinates the M3-to-M4 boundary. It selects the adapter
+// that can normalize a snapshot's evidence by the connector that produced it,
+// and imports no adapter itself: the composition root decides which adapters
+// exist, so adding one does not mean editing this package.
 package exporter
 
 import (
@@ -22,15 +24,50 @@ import (
 	"net/http"
 
 	"alih/internal/archive"
-	"alih/internal/connector/clickup"
+	"alih/internal/buildinfo"
+	"alih/internal/model"
 	"alih/internal/snapshot"
 )
 
-type Service struct {
-	httpClient *http.Client
+// Normalizer turns one connector's raw M3 evidence into the portable model.
+// It is the only provider-specific step in the M3-to-M4 boundary, and it is
+// supplied rather than imported.
+type Normalizer interface {
+	// Connector is the connector name this adapter normalizes, matching the
+	// name recorded in the raw snapshot.
+	Connector() string
+	// DisplayName is how the connector names itself to a person. It is sealed
+	// into the archive so a recovery report can name the provider correctly
+	// without Core knowing any provider's name.
+	DisplayName() string
+	NormalizeSnapshot(snapshot.Evidence) (model.Archive, error)
 }
 
-func New(httpClient *http.Client) *Service { return &Service{httpClient: httpClient} }
+type Service struct {
+	httpClient  *http.Client
+	alihVersion string
+	normalizers map[string]Normalizer
+}
+
+// New creates the M4 export service using the running build's identity.
+func New(httpClient *http.Client, normalizers ...Normalizer) *Service {
+	return NewWithVersion(httpClient, "", normalizers...)
+}
+
+// NewWithVersion creates the service with an injected release identity, so an
+// archive records the version of the application that actually produced it.
+func NewWithVersion(httpClient *http.Client, alihVersion string, normalizers ...Normalizer) *Service {
+	registry := make(map[string]Normalizer, len(normalizers))
+	for _, normalizer := range normalizers {
+		if normalizer == nil {
+			continue
+		}
+		registry[normalizer.Connector()] = normalizer
+	}
+	return &Service{
+		httpClient: httpClient, alihVersion: buildinfo.Resolve(alihVersion), normalizers: registry,
+	}
+}
 
 func (service *Service) Name() string { return "m4-portable-archive" }
 
@@ -39,15 +76,18 @@ func (service *Service) Export(ctx context.Context, snapshotPath, outputPath, cr
 	if err != nil {
 		return archive.Summary{}, fmt.Errorf("load completed M3 snapshot: %w", err)
 	}
-	if evidence.Connector != "clickup" {
+	normalizer, known := service.normalizers[evidence.Connector]
+	if !known {
 		return archive.Summary{}, fmt.Errorf("no M4 adapter for connector %q", evidence.Connector)
 	}
-	portable, err := clickup.NormalizeSnapshot(evidence)
+	portable, err := normalizer.NormalizeSnapshot(evidence)
 	if err != nil {
-		return archive.Summary{}, fmt.Errorf("normalize ClickUp raw evidence: %w", err)
+		return archive.Summary{}, fmt.Errorf("normalize %s raw evidence: %w", evidence.Connector, err)
 	}
 	return archive.Build(ctx, evidence, portable, outputPath, archive.Options{
-		HTTPClient: service.httpClient,
-		Credential: credential,
+		HTTPClient:           service.httpClient,
+		Credential:           credential,
+		AlihVersion:          service.alihVersion,
+		ConnectorDisplayName: normalizer.DisplayName(),
 	})
 }

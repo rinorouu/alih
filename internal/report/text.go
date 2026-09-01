@@ -19,6 +19,7 @@ import (
 	"io"
 	"strings"
 
+	"alih/internal/connector"
 	"alih/internal/verify"
 )
 
@@ -69,6 +70,13 @@ func RenderText(output io.Writer, document Document) error {
 		writer.line("")
 		writer.line("  manifest.json could not be read: %s", orUnknown(identity.ManifestError))
 		writer.line("  The archive therefore does not state what it is.")
+	}
+	if document.OperationalAssessment != nil && connector.ValidateOperationalAssessment(*document.OperationalAssessment) == nil {
+		writer.line("")
+		writer.line("  Recorded operational assessment:")
+		if err := connector.WriteOperationalAssessmentText(output, *document.OperationalAssessment); err != nil {
+			return err
+		}
 	}
 
 	writer.section("2. VERIFICATION STATUS")
@@ -144,7 +152,12 @@ func RenderText(output io.Writer, document Document) error {
 		writer.line("  The archive declares no source capabilities, so its scope is not established.")
 	}
 	for _, capability := range document.Capabilities {
-		writer.line("  %-22s %s", capability.Name, capability.State)
+		if capability.ID != "" {
+			writer.line("  %-22s %s  required=%s  availability=%s", capability.Name, capability.State, capability.Requirement, capability.Availability)
+			writer.line("      id: %s", capability.ID)
+		} else {
+			writer.line("  %-22s %s", capability.Name, capability.State)
+		}
 		if capability.Note != "" {
 			writer.wrap("      source note: ", capability.Note)
 		}

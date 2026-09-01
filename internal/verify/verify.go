@@ -99,16 +99,18 @@ type Reconciliation struct {
 
 // Report is the complete machine-readable verification result.
 type Report struct {
-	ArchivePath    string                 `json:"archive_path"`
-	Result         string                 `json:"result"`
-	ArchiveStatus  string                 `json:"archive_status"`
-	Connector      string                 `json:"connector"`
-	Source         connector.Workspace    `json:"source"`
-	Checks         []Check                `json:"checks"`
-	Reconciliation []Reconciliation       `json:"reconciliation"`
-	Capabilities   []connector.Capability `json:"capabilities"`
-	Limitations    []string               `json:"limitations"`
-	NotProven      []string               `json:"not_proven"`
+	ArchivePath             string                           `json:"archive_path"`
+	Result                  string                           `json:"result"`
+	ArchiveStatus           string                           `json:"archive_status"`
+	Connector               string                           `json:"connector"`
+	Source                  connector.Workspace              `json:"source"`
+	Checks                  []Check                          `json:"checks"`
+	Reconciliation          []Reconciliation                 `json:"reconciliation"`
+	CapabilitySchemaVersion int                              `json:"capability_schema_version,omitempty"`
+	Capabilities            []connector.Capability           `json:"capabilities"`
+	OperationalAssessment   *connector.OperationalAssessment `json:"operational_assessment,omitempty"`
+	Limitations             []string                         `json:"limitations"`
+	NotProven               []string                         `json:"not_proven"`
 }
 
 // Failed reports whether the archive did not pass verification.
@@ -186,7 +188,9 @@ func Archive(path string, options Options) (Report, error) {
 		report.ArchiveStatus = manifest.Status
 		report.Connector = manifest.Connector
 		report.Source = manifest.Source
-		report.Capabilities = manifest.Capabilities
+		report.CapabilitySchemaVersion = manifest.CapabilitySchemaVersion
+		report.Capabilities = connector.CanonicalCapabilities(manifest.CapabilitySchemaVersion, manifest.Capabilities)
+		report.OperationalAssessment = manifest.OperationalAssessment
 		v.checkRecordedFileChecksums(manifest, files)
 	} else {
 		v.notEvaluated("file_checksums", "recorded file checksums were not evaluated because manifest.json could not be read")
@@ -253,6 +257,9 @@ func (v *verification) limitations(manifest archive.Manifest, manifestOK bool) [
 		for _, capability := range manifest.Capabilities {
 			if capability.State != connector.CapabilitySupported {
 				limitations = append(limitations, fmt.Sprintf("Source capability %q remains %s and was not verified as portable data: %s", capability.Name, capability.State, capability.Note))
+			}
+			if manifest.CapabilitySchemaVersion == connector.CapabilitySchemaVersion && capability.Availability != connector.CapabilityAvailabilityAvailable {
+				limitations = append(limitations, fmt.Sprintf("Source capability %q was %s for this archive operation.", capability.Name, capability.Availability))
 			}
 		}
 	}

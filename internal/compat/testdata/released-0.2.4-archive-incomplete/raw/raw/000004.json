@@ -1,0 +1,11 @@
+{
+			"id":"t1","name":"First task",
+			"status":{"status":"open","type":"open"},
+			"priority":{"priority":"high"},
+			"creator":{"id":7,"username":"Tester","email":"tester@example.com"},
+			"assignees":[{"id":7,"username":"Tester","email":"tester@example.com"}],
+			"tags":[{"name":"alpha"}],
+			"custom_fields":[{"id":"f1","name":"Workstream","type":"drop_down","value":"o1"}],
+			"attachments":[{"id":"a1","title":"file.txt","mimetype":"text/plain","size":20,"url":"https://files.example/a1","url_w_query":"https://files.example/a1?signature=private"}],
+			"dependencies":[{"task_id":"t1","depends_on":"t2"}]
+		}

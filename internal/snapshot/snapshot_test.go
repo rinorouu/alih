@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"alih/internal/connector"
 )
@@ -42,7 +43,7 @@ func testExtractionResult(workspace connector.Workspace, reversed bool) connecto
 		}
 	}
 	return connector.ExtractionResult{
-		ScanResult:    connector.ScanResult{Workspace: workspace, Inventory: connector.Inventory{Spaces: 1, Lists: 1, Tasks: 1}},
+		ScanResult:    connector.ScanResult{Workspace: workspace, Inventory: connector.Inventory{Containers: 1, Collections: 1, Records: 1, ContainerKinds: map[string]int{"space": 1}, RecordKinds: map[string]int{"task": 1}}},
 		SourceObjects: objects,
 	}
 }
@@ -104,6 +105,99 @@ func TestBeginMarksUnfinishedStagingAsInProgress(t *testing.T) {
 	decodeFile(t, filepath.Join(session.stagingPath, "run.json"), &runFile)
 	if runFile.Status != "IN_PROGRESS" || runFile.Consistency.Atomic {
 		t.Fatalf("initial run record = %#v", runFile)
+	}
+}
+
+func TestCapabilityContractRoundTripsAndRejectsConfiguredCredential(t *testing.T) {
+	t.Parallel()
+
+	workspace := connector.Workspace{ID: "w1", Name: "Test"}
+	capability := connector.Capability{
+		ID: connector.CapabilityItems, Name: "Items", Requirement: connector.CapabilityRequired,
+		Implementation: connector.CapabilitySupported, Availability: connector.CapabilityAvailabilityAvailable,
+		State: connector.CapabilitySupported, Note: "records and nested records",
+	}
+	target := filepath.Join(t.TempDir(), "m3")
+	session, err := Begin(target, "clickup", workspace, testIdentity, "private-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := connector.ExtractionResult{
+		ScanResult: connector.ScanResult{
+			Workspace: workspace, CapabilitySchemaVersion: connector.CapabilitySchemaVersion,
+			Capabilities: []connector.Capability{capability},
+		},
+		SourceObjects: []connector.SourceObject{{Type: "workspace", ID: workspace.ID}},
+	}
+	assessment, err := connector.HealthyAssessment("clickup", connector.HealthBasisExtraction, time.Date(2026, 8, 31, 7, 0, 0, 0, time.UTC), connector.AuthenticationAuthenticated, []connector.Capability{capability})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Assessment = assessment
+	if _, err := session.Complete(result); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := LoadComplete(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.CapabilitySchemaVersion != connector.CapabilitySchemaVersion || len(evidence.Capabilities) != 1 || evidence.Capabilities[0] != capability {
+		t.Fatalf("loaded capability contract = v%d %#v", evidence.CapabilitySchemaVersion, evidence.Capabilities)
+	}
+	if !strings.HasPrefix(evidence.CapabilityDigest, "sha256:") {
+		t.Fatalf("capability digest = %q", evidence.CapabilityDigest)
+	}
+	if evidence.OperationalAssessment == nil || evidence.OperationalAssessment.Health.Basis != connector.HealthBasisExtraction {
+		t.Fatalf("loaded operational assessment = %#v", evidence.OperationalAssessment)
+	}
+
+	secretTarget := filepath.Join(t.TempDir(), "m3")
+	secretSession, err := Begin(secretTarget, "clickup", workspace, testIdentity, "private-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Capabilities[0].Note = "unsafe private-token value"
+	if _, err := secretSession.Complete(result); err == nil || !strings.Contains(err.Error(), "configured credential") {
+		t.Fatalf("secret capability error = %v", err)
+	}
+	if _, err := os.Stat(secretTarget); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("secret-bearing capability produced a complete snapshot: %v", err)
+	}
+
+	healthSecretTarget := filepath.Join(t.TempDir(), "m3")
+	healthSecretSession, err := Begin(healthSecretTarget, "clickup", workspace, testIdentity, "private-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Capabilities[0] = capability
+	result.Assessment.Health.Message = "unsafe private-token value"
+	if _, err := healthSecretSession.Complete(result); err == nil || !strings.Contains(err.Error(), "operational assessment contains a configured credential") {
+		t.Fatalf("secret assessment error = %v", err)
+	}
+}
+
+func TestPreContractCapabilitySnapshotRemainsReadable(t *testing.T) {
+	t.Parallel()
+
+	workspace := connector.Workspace{ID: "legacy-w1", Name: "Legacy"}
+	target := filepath.Join(t.TempDir(), "m3")
+	session, err := Begin(target, "clickup", workspace, testIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := connector.Capability{Name: "Tasks/subtasks", State: connector.CapabilitySupported, Note: "pre-contract fixture"}
+	if _, err := session.Complete(connector.ExtractionResult{
+		ScanResult:    connector.ScanResult{Workspace: workspace, Capabilities: []connector.Capability{legacy}},
+		SourceObjects: []connector.SourceObject{{Type: "workspace", ID: workspace.ID}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := LoadComplete(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.CapabilitySchemaVersion != 0 || evidence.CapabilityDigest != "" || len(evidence.Capabilities) != 1 || evidence.Capabilities[0] != legacy {
+		t.Fatalf("legacy capability evidence changed: v%d digest=%q %#v", evidence.CapabilitySchemaVersion, evidence.CapabilityDigest, evidence.Capabilities)
 	}
 }
 

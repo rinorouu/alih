@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	"alih/internal/buildinfo"
 	"alih/internal/connector"
 	"alih/internal/model"
 	"alih/internal/snapshot"
@@ -43,7 +44,14 @@ const (
 	// ArchiveSchemaVersion is the version of the archive manifest format.
 	// Version 2 replaced the ambiguous "created_at" field, which actually held
 	// the M3 extraction time, with two explicitly named instants.
-	ArchiveSchemaVersion = 2
+	// ArchiveSchemaVersion 3 records provider-neutral entity counts and the
+	// connector's own display name. Version 2 archives remain verifiable and
+	// are never rewritten.
+	ArchiveSchemaVersion = 3
+	// MinReadableSchemaVersion is the oldest manifest this build still reads.
+	// It exists so that dropping support for a released format is a deliberate
+	// edit rather than a side effect of bumping the version above.
+	MinReadableSchemaVersion = 2
 
 	StatusCreatedUnverified = "CREATED_UNVERIFIED"
 	StatusIncomplete        = "INCOMPLETE"
@@ -96,28 +104,37 @@ type Manifest struct {
 	// derived from filesystem timestamps, and is null when the archive was
 	// never completed. It is the one field that legitimately differs between
 	// two archives built from identical evidence.
-	ArchiveCompletedAt *time.Time          `json:"archive_completed_at"`
-	Connector          string              `json:"connector"`
-	Source             connector.Workspace `json:"source"`
+	ArchiveCompletedAt *time.Time `json:"archive_completed_at"`
+	Connector          string     `json:"connector"`
+	// ConnectorDisplayName is how the connector names itself to a person, as
+	// opposed to the stable identifier above. It travels with the archive
+	// because a recovery report is written from an archive that may come from
+	// any connector, so the running build's wiring is the wrong place to ask.
+	// It is absent in schema 2 archives.
+	ConnectorDisplayName string              `json:"connector_display_name,omitempty"`
+	Source               connector.Workspace `json:"source"`
 	// ExtractedBy names the authenticated account whose access produced this
 	// archive. The archive is that identity's view of the source and nothing
 	// wider; it is absent for snapshots taken before Alih recorded it.
-	ExtractedBy   *connector.Identity    `json:"extracted_by,omitempty"`
-	InputSnapshot InputSnapshot          `json:"input_snapshot"`
-	Inventory     map[string]EntityCount `json:"inventory"`
-	Observed      map[string]int         `json:"observed_entities"`
-	Capabilities  []connector.Capability `json:"capabilities"`
-	Attachments   []AttachmentRecord     `json:"attachments"`
-	Files         []FileRecord           `json:"files"`
-	Limitations   []string               `json:"limitations"`
-	Discrepancies []Discrepancy          `json:"discrepancies"`
-	Verification  VerificationState      `json:"verification"`
+	ExtractedBy             *connector.Identity              `json:"extracted_by,omitempty"`
+	InputSnapshot           InputSnapshot                    `json:"input_snapshot"`
+	Inventory               map[string]EntityCount           `json:"inventory"`
+	Observed                map[string]int                   `json:"observed_entities"`
+	CapabilitySchemaVersion int                              `json:"capability_schema_version,omitempty"`
+	Capabilities            []connector.Capability           `json:"capabilities"`
+	OperationalAssessment   *connector.OperationalAssessment `json:"operational_assessment,omitempty"`
+	Attachments             []AttachmentRecord               `json:"attachments"`
+	Files                   []FileRecord                     `json:"files"`
+	Limitations             []string                         `json:"limitations"`
+	Discrepancies           []Discrepancy                    `json:"discrepancies"`
+	Verification            VerificationState                `json:"verification"`
 }
 
 type InputSnapshot struct {
-	LogicalDigest string `json:"logical_inventory_digest"`
-	Status        string `json:"status"`
-	Atomic        bool   `json:"atomic"`
+	LogicalDigest    string `json:"logical_inventory_digest"`
+	CapabilityDigest string `json:"capability_digest,omitempty"`
+	Status           string `json:"status"`
+	Atomic           bool   `json:"atomic"`
 }
 
 type VerificationState struct {
@@ -126,11 +143,12 @@ type VerificationState struct {
 }
 
 type Summary struct {
-	Path        string
-	Status      string
-	Inventory   map[string]EntityCount
-	Observed    map[string]int
-	Attachments []AttachmentRecord
+	Path                  string
+	Status                string
+	Inventory             map[string]EntityCount
+	Observed              map[string]int
+	Attachments           []AttachmentRecord
+	OperationalAssessment *connector.OperationalAssessment
 }
 
 type Options struct {
@@ -141,6 +159,15 @@ type Options struct {
 	// timestamp is an injected observation rather than a hidden global, and so
 	// tests can prove it is neither a filesystem mtime nor the snapshot time.
 	Now func() time.Time
+	// AlihVersion is the release identity recorded in this archive's
+	// provenance. An empty value falls back to the running build's identity.
+	// It is written into a new archive only; an existing archive is never
+	// rewritten to carry a different version.
+	AlihVersion string
+	// ConnectorDisplayName is the human name of the connector that produced the
+	// evidence, supplied by its adapter. An empty value leaves the archive with
+	// only the connector identifier, which readers fall back to.
+	ConnectorDisplayName string
 }
 
 // Build creates a new archive directory. A supported attachment failure still
@@ -152,6 +179,18 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 	}
 	if err := ensureTreeExcludesSecret(evidence.RootPath, options.Credential); err != nil {
 		return Summary{}, err
+	}
+	if evidence.OperationalAssessment != nil {
+		if err := connector.ValidateOperationalAssessment(*evidence.OperationalAssessment); err != nil {
+			return Summary{}, fmt.Errorf("raw snapshot operational assessment: %w", err)
+		}
+		encoded, err := json.Marshal(evidence.OperationalAssessment)
+		if err != nil {
+			return Summary{}, fmt.Errorf("encode raw snapshot operational assessment: %w", err)
+		}
+		if options.Credential != "" && bytes.Contains(encoded, []byte(options.Credential)) {
+			return Summary{}, errors.New("raw snapshot operational assessment contains the configured credential")
+		}
 	}
 	absolute, err := filepath.Abs(targetPath)
 	if err != nil {
@@ -179,7 +218,7 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 		return Summary{}, err
 	}
 	fail := func(cause error) (Summary, error) {
-		failedPath, preserveErr := preserveFailedArchive(staging, absolute, evidence, portable, cause)
+		failedPath, preserveErr := preserveFailedArchive(staging, absolute, evidence, portable, cause, options.AlihVersion, options.ConnectorDisplayName)
 		if preserveErr != nil {
 			return Summary{Path: staging, Status: StatusFailed}, fmt.Errorf("%v; preserve failed archive: %w", cause, preserveErr)
 		}
@@ -201,11 +240,14 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 		return portable.Attachments[i].ID < portable.Attachments[j].ID
 	})
 	downloadAttachments(ctx, filepath.Join(staging, "attachments"), &portable, options)
+	if err := observeAttachmentCapability(&portable); err != nil {
+		return fail(fmt.Errorf("record attachment capability availability: %w", err))
+	}
 
 	metadata := map[string]string{
-		"alih_version":                   "0.0.1",
+		"alih_version":                   buildinfo.Resolve(options.AlihVersion),
 		"archive_schema_version":         strconv.Itoa(ArchiveSchemaVersion),
-		"archive_status":                 archiveStatus(portable.Attachments),
+		"archive_status":                 archiveStatus(portable),
 		"connector":                      evidence.Connector,
 		"source_workspace_id":            evidence.Workspace.ID,
 		"source_snapshot_logical_digest": evidence.LogicalDigest,
@@ -222,7 +264,7 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 	// Every archive member except manifest.json is now written, so this is the
 	// instant the archive's content is complete.
 	completedAt := clock(options)().UTC()
-	manifest, err := buildManifest(staging, evidence, portable, &completedAt)
+	manifest, err := buildManifest(staging, evidence, portable, &completedAt, options.AlihVersion, options.ConnectorDisplayName)
 	if err != nil {
 		return fail(err)
 	}
@@ -235,6 +277,7 @@ func Build(ctx context.Context, evidence snapshot.Evidence, portable model.Archi
 	return Summary{
 		Path: absolute, Status: manifest.Status, Inventory: manifest.Inventory,
 		Observed: manifest.Observed, Attachments: manifest.Attachments,
+		OperationalAssessment: manifest.OperationalAssessment,
 	}, nil
 }
 
@@ -242,33 +285,40 @@ func validatePortable(evidence snapshot.Evidence, portable model.Archive) error 
 	if portable.Connector != evidence.Connector || portable.Workspace.Source.ID != evidence.Workspace.ID {
 		return errors.New("portable model source does not match raw snapshot")
 	}
-	countKind := func(kind string) int {
-		count := 0
-		for _, value := range portable.Containers {
-			if value.Kind == kind {
-				count++
-			}
-		}
-		return count
+	if portable.CapabilitySchemaVersion != evidence.CapabilitySchemaVersion {
+		return errors.New("portable capability schema does not match raw snapshot")
 	}
-	countRecords := func(kind string) int {
-		count := 0
-		for _, value := range portable.Records {
-			if value.Kind == kind {
-				count++
-			}
+	capabilityDigest, err := connector.CapabilityDigest(evidence.CapabilitySchemaVersion, evidence.Connector, evidence.Capabilities)
+	if err != nil {
+		return fmt.Errorf("raw snapshot capability contract: %w", err)
+	}
+	if evidence.CapabilitySchemaVersion == connector.CapabilitySchemaVersion && capabilityDigest != evidence.CapabilityDigest {
+		return errors.New("raw snapshot capability contract digest mismatch")
+	}
+	if err := connector.ValidateCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities); err != nil {
+		return fmt.Errorf("portable capability contract: %w", err)
+	}
+	portableCapabilityDigest, err := connector.CapabilityDigest(portable.CapabilitySchemaVersion, portable.Connector, portable.Capabilities)
+	if err != nil {
+		return fmt.Errorf("portable capability contract: %w", err)
+	}
+	if portable.CapabilitySchemaVersion == connector.CapabilitySchemaVersion && portableCapabilityDigest != evidence.CapabilityDigest {
+		return errors.New("portable capability contract does not match raw snapshot")
+	}
+	nested := 0
+	for _, value := range portable.Records {
+		if value.ParentRecordID != nil {
+			nested++
 		}
-		return count
 	}
 	checks := []struct {
 		name             string
 		expected, actual int
 	}{
-		{"spaces", evidence.Inventory.Spaces, countKind("space")},
-		{"folders", evidence.Inventory.Folders, countKind("folder")},
-		{"lists", evidence.Inventory.Lists, len(portable.Collections)},
-		{"tasks", evidence.Inventory.Tasks, countRecords("task")},
-		{"subtasks", evidence.Inventory.Subtasks, countRecords("subtask")},
+		{"containers", evidence.Inventory.Containers, len(portable.Containers)},
+		{"collections", evidence.Inventory.Collections, len(portable.Collections)},
+		{"records", evidence.Inventory.Records, len(portable.Records)},
+		{"nested records", evidence.Inventory.NestedRecords, nested},
 		{"comments", evidence.Inventory.Comments, len(portable.Comments)},
 		{"attachments", evidence.Inventory.Attachments, len(portable.Attachments)},
 		{"custom_fields", evidence.Inventory.CustomFields, len(portable.FieldDefinitions)},
@@ -277,6 +327,45 @@ func validatePortable(evidence snapshot.Evidence, portable model.Archive) error 
 	for _, check := range checks {
 		if check.expected != check.actual {
 			return fmt.Errorf("portable %s count mismatch: expected %d from M3, normalized %d", check.name, check.expected, check.actual)
+		}
+	}
+	// The connector's own vocabulary is reconciled too, so a normalizer that
+	// silently reclassified an object is still caught. Core does not interpret
+	// the kind names; it only requires the counts to agree with what the
+	// connector said it had found.
+	if err := reconcileKinds("container", evidence.Inventory.ContainerKinds, containerKinds(portable)); err != nil {
+		return err
+	}
+	return reconcileKinds("record", evidence.Inventory.RecordKinds, recordKinds(portable))
+}
+
+func containerKinds(portable model.Archive) map[string]int {
+	counts := make(map[string]int)
+	for _, value := range portable.Containers {
+		counts[value.Kind]++
+	}
+	return counts
+}
+
+func recordKinds(portable model.Archive) map[string]int {
+	counts := make(map[string]int)
+	for _, value := range portable.Records {
+		counts[value.Kind]++
+	}
+	return counts
+}
+
+func reconcileKinds(label string, expected, actual map[string]int) error {
+	for kind, count := range expected {
+		if actual[kind] != count {
+			return fmt.Errorf("portable %s kind %q count mismatch: expected %d from M3, normalized %d",
+				label, kind, count, actual[kind])
+		}
+	}
+	for kind, count := range actual {
+		if _, declared := expected[kind]; !declared && count != 0 {
+			return fmt.Errorf("portable %s kind %q was normalized %d times but the M3 inventory does not declare it",
+				label, kind, count)
 		}
 	}
 	return nil
@@ -343,6 +432,80 @@ func downloadAttachments(ctx context.Context, directory string, portable *model.
 			markAttachmentUnresolved(attachment, sanitizeAttachmentError(lastError, options.Credential))
 		}
 	}
+}
+
+// observeAttachmentCapability refines the extraction-time UNKNOWN observation
+// only after M4 has attempted every expected attachment. Legacy artifacts did
+// not carry stable capability identity and are preserved without inference.
+func observeAttachmentCapability(portable *model.Archive) error {
+	if portable.CapabilitySchemaVersion == 0 {
+		return nil
+	}
+	availability := connector.CapabilityAvailabilityAvailable
+	for _, attachment := range portable.Attachments {
+		if attachment.DownloadStatus != "RETRIEVED" {
+			availability = connector.CapabilityAvailabilityFailed
+			break
+		}
+	}
+	found := false
+	for index := range portable.Capabilities {
+		if portable.Capabilities[index].ID == connector.CapabilityAttachmentContent {
+			portable.Capabilities[index].Availability = availability
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("capability contract omits attachment content")
+	}
+	portable.Capabilities = connector.CanonicalCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities)
+	return connector.ValidateCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities)
+}
+
+// backupOperationalAssessment refines the extraction observation after the
+// archive has attempted attachment content. It never changes authentication
+// meaning and scopes any failure to the exact capability that failed.
+func backupOperationalAssessment(evidence snapshot.Evidence, portable model.Archive, observedAt time.Time) *connector.OperationalAssessment {
+	if evidence.OperationalAssessment == nil || connector.ValidateOperationalAssessment(*evidence.OperationalAssessment) != nil {
+		return nil
+	}
+	capabilities := make([]connector.CapabilityHealth, 0, len(portable.Capabilities))
+	for _, capability := range connector.CanonicalCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities) {
+		state, reason, message := connector.HealthUnknown, connector.HealthReasonUnknownFailure, "Capability availability was not established by this archive operation."
+		switch capability.Availability {
+		case connector.CapabilityAvailabilityAvailable:
+			state, reason, message = connector.HealthHealthy, connector.HealthReasonNone, "Capability completed successfully."
+		case connector.CapabilityAvailabilityFailed:
+			state, reason, message = connector.HealthUnavailable, connector.HealthReasonCapabilityFailed, "The archive operation could not obtain this capability."
+		case connector.CapabilityAvailabilityUnavailable:
+			state, reason, message = connector.HealthUnavailable, connector.HealthReasonCapabilityRemoved, "This capability was unavailable to the archive operation."
+		}
+		capabilities = append(capabilities, connector.CapabilityHealth{
+			ID: capability.ID, Requirement: capability.Requirement, State: state,
+			Reason: reason, Retryable: state == connector.HealthUnavailable, Message: message,
+		})
+	}
+	state, reason, retryable := connector.AggregateCapabilityHealth(capabilities)
+	message := "The backup operation completed all assessed capabilities."
+	if state != connector.HealthHealthy {
+		message = "One or more backup capabilities did not complete successfully."
+	}
+	assessment := connector.OperationalAssessment{
+		SchemaVersion: connector.HealthSchemaVersion,
+		Health: connector.Health{
+			SchemaVersion: connector.HealthSchemaVersion, Connector: evidence.Connector,
+			State: state, Basis: connector.HealthBasisBackup, ObservedAt: observedAt.UTC(),
+			Reason: reason, Retryable: retryable, Message: message, Capabilities: capabilities,
+		},
+		Authentication: evidence.OperationalAssessment.Authentication,
+	}
+	assessment.Authentication.ObservedAt = observedAt.UTC()
+	connector.CanonicalizeOperationalAssessment(&assessment)
+	if connector.ValidateOperationalAssessment(assessment) != nil {
+		return nil
+	}
+	return &assessment
 }
 
 func downloadAttachmentAttempt(ctx context.Context, client *http.Client, destination string, attachment *model.Attachment, credential string) (bool, error) {
@@ -438,8 +601,8 @@ func clock(options Options) func() time.Time {
 	return time.Now
 }
 
-func buildManifest(staging string, evidence snapshot.Evidence, portable model.Archive, completedAt *time.Time) (Manifest, error) {
-	status := archiveStatus(portable.Attachments)
+func buildManifest(staging string, evidence snapshot.Evidence, portable model.Archive, completedAt *time.Time, alihVersion, connectorDisplayName string) (Manifest, error) {
+	status := archiveStatus(portable)
 	inventory := manifestInventory(evidence.Inventory, portable)
 	attachments := make([]AttachmentRecord, 0, len(portable.Attachments))
 	discrepancies := make([]Discrepancy, 0)
@@ -476,35 +639,29 @@ func buildManifest(staging string, evidence snapshot.Evidence, portable model.Ar
 	limitations = append(limitations, "Archive creation completed without independent M5 verification; verification status is NOT_RUN.")
 	sort.Strings(limitations)
 	return Manifest{
-		SchemaVersion: ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: status,
+		SchemaVersion: ArchiveSchemaVersion, AlihVersion: buildinfo.Resolve(alihVersion), Status: status,
 		SourceSnapshotCompletedAt: evidence.FinishedAt, ArchiveCompletedAt: completedAt,
-		Connector: evidence.Connector, Source: evidence.Workspace, ExtractedBy: extractedIdentity(evidence),
-		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, Status: "COMPLETE", Atomic: false},
+		Connector: evidence.Connector, ConnectorDisplayName: strings.TrimSpace(connectorDisplayName),
+		Source: evidence.Workspace, ExtractedBy: extractedIdentity(evidence),
+		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, CapabilityDigest: evidence.CapabilityDigest, Status: "COMPLETE", Atomic: false},
 		Inventory:     inventory,
 		Observed: map[string]int{
 			"workspaces": 1, "identities": len(portable.Identities), "record_identity_roles": len(portable.RecordIdentities),
 			"record_tags": len(portable.RecordTags), "record_field_values": len(portable.RecordFieldValues),
 		},
-		Capabilities: append([]connector.Capability(nil), portable.Capabilities...),
-		Attachments:  attachments, Files: files, Limitations: limitations, Discrepancies: discrepancies,
+		CapabilitySchemaVersion: portable.CapabilitySchemaVersion,
+		Capabilities:            connector.CanonicalCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities),
+		OperationalAssessment:   backupOperationalAssessment(evidence, portable, *completedAt),
+		Attachments:             attachments, Files: files, Limitations: limitations, Discrepancies: discrepancies,
 		Verification: VerificationState{Status: "NOT_RUN", Note: "Independent M5 verification has not been implemented or executed."},
 	}, nil
 }
 
 func manifestInventory(expected connector.Inventory, portable model.Archive) map[string]EntityCount {
-	spaces, folders, tasks, subtasks := 0, 0, 0, 0
-	for _, value := range portable.Containers {
-		if value.Kind == "space" {
-			spaces++
-		} else if value.Kind == "folder" {
-			folders++
-		}
-	}
+	nested := 0
 	for _, value := range portable.Records {
-		if value.Kind == "task" {
-			tasks++
-		} else if value.Kind == "subtask" {
-			subtasks++
+		if value.ParentRecordID != nil {
+			nested++
 		}
 	}
 	retrieved := 0
@@ -513,40 +670,59 @@ func manifestInventory(expected connector.Inventory, portable model.Archive) map
 			retrieved++
 		}
 	}
-	return map[string]EntityCount{
-		"spaces":        {Expected: expected.Spaces, Archived: spaces},
-		"folders":       {Expected: expected.Folders, Archived: folders},
-		"lists":         {Expected: expected.Lists, Archived: len(portable.Collections)},
-		"tasks":         {Expected: expected.Tasks, Archived: tasks},
-		"subtasks":      {Expected: expected.Subtasks, Archived: subtasks},
-		"comments":      {Expected: expected.Comments, Archived: len(portable.Comments)},
-		"attachments":   {Expected: expected.Attachments, Archived: retrieved, Unresolved: expected.Attachments - retrieved},
-		"custom_fields": {Expected: expected.CustomFields, Archived: len(portable.FieldDefinitions)},
-		"relationships": {Expected: expected.Relationships, Archived: len(portable.Relationships)},
+	inventory := map[string]EntityCount{
+		"containers":     {Expected: expected.Containers, Archived: len(portable.Containers)},
+		"collections":    {Expected: expected.Collections, Archived: len(portable.Collections)},
+		"records":        {Expected: expected.Records, Archived: len(portable.Records)},
+		"nested_records": {Expected: expected.NestedRecords, Archived: nested},
+		"comments":       {Expected: expected.Comments, Archived: len(portable.Comments)},
+		"attachments":    {Expected: expected.Attachments, Archived: retrieved, Unresolved: expected.Attachments - retrieved},
+		"custom_fields":  {Expected: expected.CustomFields, Archived: len(portable.FieldDefinitions)},
+		"relationships":  {Expected: expected.Relationships, Archived: len(portable.Relationships)},
 	}
+	// The connector's own vocabulary is recorded beside the neutral totals, so
+	// the distinction between one kind of container and another survives into
+	// the sealed manifest without Core having to know either name.
+	for kind, count := range containerKinds(portable) {
+		inventory["container:"+kind] = EntityCount{Expected: expected.ContainerKinds[kind], Archived: count}
+	}
+	for kind, count := range recordKinds(portable) {
+		inventory["record:"+kind] = EntityCount{Expected: expected.RecordKinds[kind], Archived: count}
+	}
+	return inventory
 }
 
-func archiveStatus(attachments []model.Attachment) string {
-	for _, attachment := range attachments {
+func archiveStatus(portable model.Archive) string {
+	for _, attachment := range portable.Attachments {
 		if attachment.DownloadStatus != "RETRIEVED" {
 			return StatusIncomplete
+		}
+	}
+	if portable.CapabilitySchemaVersion == connector.CapabilitySchemaVersion {
+		for _, capability := range portable.Capabilities {
+			if capability.Requirement == connector.CapabilityRequired && capability.Availability != connector.CapabilityAvailabilityAvailable {
+				return StatusIncomplete
+			}
 		}
 	}
 	return StatusCreatedUnverified
 }
 
-func preserveFailedArchive(staging, target string, evidence snapshot.Evidence, portable model.Archive, cause error) (string, error) {
+func preserveFailedArchive(staging, target string, evidence snapshot.Evidence, portable model.Archive, cause error, alihVersion, connectorDisplayName string) (string, error) {
 	manifest := Manifest{
 		// A failed archive was never completed, so it records no completion
 		// instant rather than borrowing one from the source snapshot.
-		SchemaVersion: ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: StatusFailed,
+		SchemaVersion: ArchiveSchemaVersion, AlihVersion: buildinfo.Resolve(alihVersion), Status: StatusFailed,
 		SourceSnapshotCompletedAt: evidence.FinishedAt, ArchiveCompletedAt: nil,
-		Connector: evidence.Connector, Source: evidence.Workspace, ExtractedBy: extractedIdentity(evidence),
-		InputSnapshot: InputSnapshot{LogicalDigest: evidence.LogicalDigest, Status: "COMPLETE", Atomic: false},
-		Capabilities:  append([]connector.Capability(nil), portable.Capabilities...),
-		Limitations:   append([]string(nil), portable.Limitations...),
-		Discrepancies: []Discrepancy{{Kind: "ARCHIVE_BUILD_FAILED", Message: sanitizedFailure(cause)}},
-		Verification:  VerificationState{Status: "NOT_RUN", Note: "Archive construction failed before M5 verification."},
+		Connector: evidence.Connector, ConnectorDisplayName: strings.TrimSpace(connectorDisplayName),
+		Source: evidence.Workspace, ExtractedBy: extractedIdentity(evidence),
+		InputSnapshot:           InputSnapshot{LogicalDigest: evidence.LogicalDigest, CapabilityDigest: evidence.CapabilityDigest, Status: "COMPLETE", Atomic: false},
+		CapabilitySchemaVersion: portable.CapabilitySchemaVersion,
+		Capabilities:            connector.CanonicalCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities),
+		OperationalAssessment:   evidence.OperationalAssessment,
+		Limitations:             append([]string(nil), portable.Limitations...),
+		Discrepancies:           []Discrepancy{{Kind: "ARCHIVE_BUILD_FAILED", Message: sanitizedFailure(cause)}},
+		Verification:            VerificationState{Status: "NOT_RUN", Note: "Archive construction failed before M5 verification."},
 	}
 	_ = writeJSON(filepath.Join(staging, "manifest.json"), manifest)
 	failedPath := target + ".failed"

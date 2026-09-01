@@ -76,6 +76,20 @@ footer { margin-top: 3rem; font-size: .85rem; opacity: .75; }
 <dt>Files in manifest</dt><dd>{{.Identity.RecordedFiles}}</dd>
 </dl>
 {{if not .Identity.ManifestReadable}}<p class="bad"><strong>manifest.json could not be read:</strong> {{orUnknown .Identity.ManifestError}}. The archive does not state what it is.</p>{{end}}
+{{with .OperationalAssessment}}
+<h3>Recorded operational assessment</h3>
+<dl>
+<dt>Connector health</dt><dd><span class="tag {{statusClass .Health.State}}">{{.Health.State}}</span></dd>
+<dt>Authentication</dt><dd>{{.Authentication.State}} ({{.Authentication.Reason}})</dd>
+<dt>Evidence basis</dt><dd>{{.Health.Basis}} at {{.Health.ObservedAt}}</dd>
+<dt>Reason</dt><dd>{{.Health.Reason}} — {{.Health.Message}}</dd>
+</dl>
+{{if .Health.Capabilities}}
+<table><thead><tr><th>Capability</th><th>Requirement</th><th>Health</th><th>Reason</th></tr></thead><tbody>
+{{range .Health.Capabilities}}<tr><td class="mono">{{.ID}}</td><td>{{.Requirement}}</td><td>{{.State}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>
+{{end}}
+{{end}}
 
 <h2>2. Verification status</h2>
 <p class="result"><span class="tag {{statusClass .Verification.Result}}">{{.Verification.Result}}</span></p>
@@ -146,10 +160,11 @@ footer { margin-top: 3rem; font-size: .85rem; opacity: .75; }
 <h2>6. Capability coverage</h2>
 {{if .Capabilities}}
 <table>
-<thead><tr><th>Capability</th><th>Source state</th><th>What this means for recovery</th><th>This archive</th></tr></thead>
+<thead><tr><th>Capability</th><th>Contract</th><th>Source state</th><th>What this means for recovery</th><th>This archive</th></tr></thead>
 <tbody>
 {{range .Capabilities}}
-<tr><td>{{.Name}}</td>
+<tr><td>{{.Name}}{{if .ID}}<br><span class="mono">{{.ID}}</span>{{end}}</td>
+<td>{{if .ID}}{{.Requirement}}<br>availability: {{.Availability}}{{else}}legacy{{end}}</td>
 <td><span class="tag {{statusClass .State}}">{{.State}}</span></td>
 <td>{{.RecoveryMeaning}}{{if .Note}}<br><span class="finding">Source note: {{.Note}}</span>{{end}}</td>
 <td class="finding">{{.ArchiveEvidence}}</td></tr>
@@ -198,9 +213,9 @@ func RenderHTML(output io.Writer, document Document) error {
 // A state it does not recognise is never styled as good.
 func statusClass(state string) string {
 	switch state {
-	case verify.CheckPass, verify.ResultVerified, "SUPPORTED":
+	case verify.CheckPass, verify.ResultVerified, "SUPPORTED", "HEALTHY", "AUTHENTICATED":
 		return "good"
-	case verify.ResultVerifiedWithLimitations, verify.CheckUnproven, verify.CheckIncomplete, "PARTIAL", "UNKNOWN":
+	case verify.ResultVerifiedWithLimitations, verify.CheckUnproven, verify.CheckIncomplete, "PARTIAL", "UNKNOWN", "DEGRADED":
 		// CheckIncomplete and ResultIncomplete share the INCOMPLETE value.
 		return "warn"
 	case verify.CheckFail, verify.CheckNotEvaluated, "UNSUPPORTED", "UNAVAILABLE":

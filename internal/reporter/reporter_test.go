@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"alih/internal/archive"
+	"alih/internal/buildinfo"
 	"alih/internal/connector"
 	"alih/internal/verify"
 )
@@ -145,5 +146,40 @@ func TestReportDoesNotWriteToTheArchive(t *testing.T) {
 	}
 	if len(before) != len(after) {
 		t.Fatalf("reporting changed the archive contents: %d entries before, %d after", len(before), len(after))
+	}
+}
+
+func TestReportRecordsTheInjectedReleaseAndNotTheArchivesOwn(t *testing.T) {
+	t.Parallel()
+	const release = "5.5.5-reporting"
+
+	directory := t.TempDir()
+	// The archive was written by an older Alih and keeps saying so.
+	writeManifest(t, directory, archive.Manifest{
+		SchemaVersion: archive.ArchiveSchemaVersion, AlihVersion: "0.0.1", Status: archive.StatusCreatedUnverified,
+		SourceSnapshotCompletedAt: time.Date(2026, 8, 30, 1, 0, 0, 0, time.UTC),
+		ArchiveCompletedAt:        &completedAt, Connector: "clickup",
+		Source:        connector.Workspace{ID: "w1", Name: "Example"},
+		InputSnapshot: archive.InputSnapshot{LogicalDigest: "sha256:abc", Atomic: false},
+		Files:         []archive.FileRecord{{Path: "alih.db"}},
+	})
+	verifier := &stubVerifier{report: verify.Report{
+		ArchivePath: directory, Result: verify.ResultVerified, Connector: "clickup",
+		Source: connector.Workspace{ID: "w1", Name: "Example"},
+	}}
+
+	document, err := NewWithVersion(verifier, release).Report(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.AlihVersion != release {
+		t.Fatalf("report version = %q, want the injected release %q", document.AlihVersion, release)
+	}
+	if document.Identity.CreatedByAlihVersion != "0.0.1" {
+		t.Fatalf("archive provenance = %q, want the version the archive itself records",
+			document.Identity.CreatedByAlihVersion)
+	}
+	if fallback := New(verifier); fallback.alihVersion != buildinfo.Resolve("") {
+		t.Fatalf("default service version = %q, want the build identity", fallback.alihVersion)
 	}
 }

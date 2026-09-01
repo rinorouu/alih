@@ -293,22 +293,57 @@ func (v *verification) checkCounts(database *portableDatabase, manifest archive.
 			retrieved++
 		}
 	}
-	entities := []struct {
+	nested := 0
+	for _, row := range database.Records {
+		if row.ParentRecordID != nil {
+			nested++
+		}
+	}
+
+	type entityCheck struct {
 		name     string
 		expected int
 		archived int
 		total    int
-	}{
-		{"spaces", evidence.Inventory.Spaces, containerKind("space"), containerKind("space")},
-		{"folders", evidence.Inventory.Folders, containerKind("folder"), containerKind("folder")},
-		{"lists", evidence.Inventory.Lists, len(database.Collections), len(database.Collections)},
-		{"tasks", evidence.Inventory.Tasks, recordKind("task"), recordKind("task")},
-		{"subtasks", evidence.Inventory.Subtasks, recordKind("subtask"), recordKind("subtask")},
-		{"comments", evidence.Inventory.Comments, len(database.Comments), len(database.Comments)},
-		{"attachments", evidence.Inventory.Attachments, retrieved, len(database.Attachments)},
-		{"custom_fields", evidence.Inventory.CustomFields, len(database.Fields), len(database.Fields)},
-		{"relationships", evidence.Inventory.Relationships, len(database.Relationships), len(database.Relationships)},
 	}
+	var entities []entityCheck
+	if manifest.SchemaVersion < 3 {
+		// Schema 2 archives recorded their counts in the vocabulary Alih used
+		// before the portable model was made provider-neutral. They are read
+		// exactly as they were sealed; this branch is frozen and only ever
+		// grows older.
+		legacy := evidence.Inventory.ContainerKinds
+		legacyRecords := evidence.Inventory.RecordKinds
+		entities = []entityCheck{
+			{"spaces", legacy["space"], containerKind("space"), containerKind("space")},
+			{"folders", legacy["folder"], containerKind("folder"), containerKind("folder")},
+			{"lists", evidence.Inventory.Collections, len(database.Collections), len(database.Collections)},
+			{"tasks", legacyRecords["task"], recordKind("task"), recordKind("task")},
+			{"subtasks", legacyRecords["subtask"], recordKind("subtask"), recordKind("subtask")},
+		}
+	} else {
+		entities = []entityCheck{
+			{"containers", evidence.Inventory.Containers, len(database.Containers), len(database.Containers)},
+			{"collections", evidence.Inventory.Collections, len(database.Collections), len(database.Collections)},
+			{"records", evidence.Inventory.Records, len(database.Records), len(database.Records)},
+			{"nested_records", evidence.Inventory.NestedRecords, nested, nested},
+		}
+		// The connector's own vocabulary is reconciled as the manifest recorded
+		// it, without Core attaching meaning to any kind name.
+		for kind, count := range evidence.Inventory.ContainerKinds {
+			entities = append(entities, entityCheck{"container:" + kind, count, containerKind(kind), containerKind(kind)})
+		}
+		for kind, count := range evidence.Inventory.RecordKinds {
+			entities = append(entities, entityCheck{"record:" + kind, count, recordKind(kind), recordKind(kind)})
+		}
+	}
+	entities = append(entities,
+		entityCheck{"comments", evidence.Inventory.Comments, len(database.Comments), len(database.Comments)},
+		entityCheck{"attachments", evidence.Inventory.Attachments, retrieved, len(database.Attachments)},
+		entityCheck{"custom_fields", evidence.Inventory.CustomFields, len(database.Fields), len(database.Fields)},
+		entityCheck{"relationships", evidence.Inventory.Relationships, len(database.Relationships), len(database.Relationships)},
+	)
+	sort.Slice(entities, func(left, right int) bool { return entities[left].name < entities[right].name })
 	var findings []string
 	for _, entity := range entities {
 		status := CheckPass
@@ -580,6 +615,9 @@ func (v *verification) checkAccessScopeCompleteness(manifest archive.Manifest) {
 func (v *verification) checkLimitationPreservation(manifest archive.Manifest) {
 	var findings []string
 	var limited []string
+	if err := connector.ValidateCapabilities(manifest.CapabilitySchemaVersion, manifest.Capabilities); err != nil {
+		findings = append(findings, err.Error())
+	}
 	for _, capability := range manifest.Capabilities {
 		switch capability.State {
 		case connector.CapabilitySupported:
@@ -588,6 +626,9 @@ func (v *verification) checkLimitationPreservation(manifest archive.Manifest) {
 			limited = append(limited, fmt.Sprintf("%s remains %s and verification does not change that: %s", capability.Name, capability.State, capability.Note))
 		default:
 			findings = append(findings, fmt.Sprintf("capability %q has unknown state %q", capability.Name, capability.State))
+		}
+		if manifest.CapabilitySchemaVersion == connector.CapabilitySchemaVersion && capability.Availability != connector.CapabilityAvailabilityAvailable {
+			limited = append(limited, fmt.Sprintf("%s availability for this archive operation remains %s", capability.Name, capability.Availability))
 		}
 	}
 	if len(manifest.Capabilities) == 0 {

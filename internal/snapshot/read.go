@@ -52,14 +52,17 @@ type Evidence struct {
 	Workspace connector.Workspace
 	// ExtractedBy is the authenticated account that produced the snapshot. It
 	// is empty for snapshots written before Alih recorded it.
-	ExtractedBy   connector.Identity
-	StartedAt     time.Time
-	FinishedAt    time.Time
-	LogicalDigest string
-	Inventory     connector.Inventory
-	Capabilities  []connector.Capability
-	SourceObjects []connector.SourceObject
-	Responses     []EvidenceResponse
+	ExtractedBy             connector.Identity
+	StartedAt               time.Time
+	FinishedAt              time.Time
+	LogicalDigest           string
+	CapabilityDigest        string
+	Inventory               connector.Inventory
+	CapabilitySchemaVersion int
+	Capabilities            []connector.Capability
+	OperationalAssessment   *connector.OperationalAssessment
+	SourceObjects           []connector.SourceObject
+	Responses               []EvidenceResponse
 }
 
 // LoadComplete validates the M3 control files and every successful raw-response
@@ -82,7 +85,9 @@ func LoadComplete(rootPath string) (Evidence, error) {
 	if err := readJSONFile(filepath.Join(absolute, "run.json"), &run); err != nil {
 		return Evidence{}, fmt.Errorf("read raw snapshot run record: %w", err)
 	}
-	if run.SchemaVersion != schemaVersion || run.Kind != "raw_extraction_run" {
+	// Every schema this build knows is readable; a newer one is refused rather
+	// than guessed at.
+	if run.SchemaVersion < 1 || run.SchemaVersion > schemaVersion || run.Kind != "raw_extraction_run" {
 		return Evidence{}, errors.New("unsupported raw snapshot run schema")
 	}
 	if run.Status != "COMPLETE" {
@@ -96,18 +101,39 @@ func LoadComplete(rootPath string) (Evidence, error) {
 	if err := readJSONFile(filepath.Join(absolute, "inventory.json"), &inventory); err != nil {
 		return Evidence{}, fmt.Errorf("read raw snapshot inventory: %w", err)
 	}
-	if inventory.SchemaVersion != schemaVersion || inventory.Kind != "raw_source_inventory" {
+	if inventory.SchemaVersion < 1 || inventory.SchemaVersion > schemaVersion ||
+		inventory.Kind != "raw_source_inventory" {
 		return Evidence{}, errors.New("unsupported raw snapshot inventory schema")
+	}
+	if inventory.SchemaVersion != run.SchemaVersion {
+		return Evidence{}, errors.New("raw snapshot run and inventory disagree about their schema")
 	}
 	if inventory.Connector != run.Connector || inventory.WorkspaceID != run.Source.WorkspaceID {
 		return Evidence{}, errors.New("raw snapshot source identity is inconsistent")
+	}
+	if err := connector.ValidateCapabilities(inventory.CapabilitySchemaVersion, inventory.Capabilities); err != nil {
+		return Evidence{}, fmt.Errorf("validate raw snapshot capability contract: %w", err)
+	}
+	if inventory.OperationalAssessment != nil {
+		if err := connector.ValidateOperationalAssessment(*inventory.OperationalAssessment); err != nil {
+			return Evidence{}, fmt.Errorf("validate raw snapshot operational assessment: %w", err)
+		}
+		connector.CanonicalizeOperationalAssessment(inventory.OperationalAssessment)
+	}
+	capabilityDigest, err := connector.CapabilityDigest(inventory.CapabilitySchemaVersion, inventory.Connector, inventory.Capabilities)
+	if err != nil {
+		return Evidence{}, fmt.Errorf("digest raw snapshot capability contract: %w", err)
+	}
+	if inventory.CapabilitySchemaVersion == connector.CapabilitySchemaVersion &&
+		(capabilityDigest != inventory.CapabilityDigest || capabilityDigest != run.CapabilityDigest) {
+		return Evidence{}, errors.New("raw snapshot capability contract digest mismatch")
 	}
 	objects := append([]connector.SourceObject(nil), inventory.SourceObjects...)
 	sortSourceObjects(objects)
 	if err := validateSourceObjects(objects); err != nil {
 		return Evidence{}, fmt.Errorf("validate raw source index: %w", err)
 	}
-	digest, err := logicalDigest(inventory.Connector, inventory.WorkspaceID, inventory.Counts, objects)
+	digest, err := logicalDigest(inventory.SchemaVersion, inventory.Connector, inventory.WorkspaceID, inventory.Counts, objects)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -160,8 +186,11 @@ func LoadComplete(rootPath string) (Evidence, error) {
 		Workspace:   connector.Workspace{ID: run.Source.WorkspaceID, Name: run.Source.WorkspaceName},
 		ExtractedBy: extractedBy,
 		StartedAt:   run.StartedAt, FinishedAt: run.FinishedAt, LogicalDigest: digest,
-		Inventory: inventory.Counts, Capabilities: append([]connector.Capability(nil), inventory.Capabilities...),
-		SourceObjects: objects, Responses: responses,
+		CapabilityDigest: capabilityDigest,
+		Inventory:        inventory.Counts, CapabilitySchemaVersion: inventory.CapabilitySchemaVersion,
+		Capabilities:          connector.CanonicalCapabilities(inventory.CapabilitySchemaVersion, inventory.Capabilities),
+		OperationalAssessment: inventory.OperationalAssessment,
+		SourceObjects:         objects, Responses: responses,
 	}, nil
 }
 

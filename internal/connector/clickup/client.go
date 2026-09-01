@@ -125,6 +125,11 @@ func newTestClient(baseURL string, httpClient *http.Client) (*Client, error) {
 
 func (c *Client) Name() string { return "clickup" }
 
+// DisplayName is how this connector names itself to a person. It is recorded in
+// the archives this connector produces so that a recovery report can name the
+// provider correctly without Core having to know any provider's name.
+func (c *Client) DisplayName() string { return "ClickUp" }
+
 // Authenticate validates credential through the authorized-user endpoint and
 // then discovers every Workspace returned by the authorized-workspaces endpoint.
 func (c *Client) Authenticate(ctx context.Context, credential string) (connector.Authentication, error) {
@@ -144,7 +149,11 @@ func (c *Client) Authenticate(ctx context.Context, credential string) (connector
 	if err != nil {
 		return connector.Authentication{}, err
 	}
-	return connector.Authentication{Identity: identity, Workspaces: workspaces}, nil
+	assessment, err := connector.HealthyAssessment(c.Name(), connector.HealthBasisAuthentication, c.now(), connector.AuthenticationAuthenticated, nil)
+	if err != nil {
+		return connector.Authentication{}, responseError("describe authentication health", err)
+	}
+	return connector.Authentication{Identity: identity, Workspaces: workspaces, Assessment: assessment}, nil
 }
 
 type authorizedUserResponse struct {
@@ -442,3 +451,4 @@ func sanitize(value, credential string) string {
 var _ connector.Authenticator = (*Client)(nil)
 var _ connector.Scanner = (*Client)(nil)
 var _ connector.Extractor = (*Client)(nil)
+var _ connector.OperationalError = (*Error)(nil)

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	"alih/internal/archive"
+	"alih/internal/connector"
 	"alih/internal/connector/clickup"
 )
 
@@ -68,6 +70,50 @@ func TestVerifyHealthyArchiveIsProvenWithoutModifyingIt(t *testing.T) {
 	}
 	if !containsSubstring(report.Limitations, "Task relationships") {
 		t.Errorf("verification dropped the PARTIAL source capability limitation: %#v", report.Limitations)
+	}
+}
+
+func TestVersionedCapabilityContractSurvivesM3ThroughM5(t *testing.T) {
+	t.Parallel()
+
+	archivePath := buildVersionedFixtureArchive(t, http.StatusOK)
+	report := verifyFixture(t, archivePath)
+	if report.Result != ResultVerifiedWithLimitations {
+		t.Fatalf("result = %s, want %s", report.Result, ResultVerifiedWithLimitations)
+	}
+	if report.CapabilitySchemaVersion != connector.CapabilitySchemaVersion || len(report.Capabilities) != 8 {
+		t.Fatalf("verification capability contract = v%d %#v", report.CapabilitySchemaVersion, report.Capabilities)
+	}
+	for _, capability := range report.Capabilities {
+		if capability.Availability != connector.CapabilityAvailabilityAvailable {
+			t.Errorf("archived capability %s availability = %s", capability.ID, capability.Availability)
+		}
+	}
+	manifest := readManifest(t, archivePath)
+	if manifest.InputSnapshot.CapabilityDigest == "" {
+		t.Fatal("manifest lost the M3 capability contract digest")
+	}
+	if check := checkStatus(t, report, "raw_evidence_integrity"); check.Status != CheckPass {
+		t.Fatalf("raw_evidence_integrity = %s %#v", check.Status, check.Findings)
+	}
+}
+
+func TestPreContractManifestV2RemainsVerifiable(t *testing.T) {
+	t.Parallel()
+
+	archivePath := buildFixtureArchive(t, http.StatusOK)
+	manifest := readManifest(t, archivePath)
+	if manifest.SchemaVersion != archive.ArchiveSchemaVersion || manifest.CapabilitySchemaVersion != 0 {
+		t.Fatalf("legacy fixture identity = manifest v%d capability v%d", manifest.SchemaVersion, manifest.CapabilitySchemaVersion)
+	}
+	report := verifyFixture(t, archivePath)
+	if report.Result != ResultVerifiedWithLimitations || report.CapabilitySchemaVersion != 0 {
+		t.Fatalf("legacy archive result = %s capability v%d", report.Result, report.CapabilitySchemaVersion)
+	}
+	for _, capability := range report.Capabilities {
+		if capability.ID != "" || capability.Requirement != "" || capability.Implementation != "" || capability.Availability != "" {
+			t.Fatalf("legacy capability was assigned invented v1 semantics: %#v", capability)
+		}
 	}
 }
 
@@ -226,9 +272,9 @@ func TestVerifyDetectsDeliberateCorruption(t *testing.T) {
 			name: "manifest overstates what was archived",
 			corrupt: func(t *testing.T, path string) {
 				manifest := readManifest(t, path)
-				count := manifest.Inventory["tasks"]
+				count := manifest.Inventory["records"]
 				count.Expected = 99
-				manifest.Inventory["tasks"] = count
+				manifest.Inventory["records"] = count
 				writeManifest(t, path, manifest)
 			},
 			failedCheck: "count_reconciliation",
@@ -460,5 +506,29 @@ func TestVerifyNeverEstablishesAccessScopeCompleteness(t *testing.T) {
 	}
 	if !containsSubstring(report.NotProven, "could see the entire Workspace") {
 		t.Errorf("the access scope limitation is missing from the unproven claims: %#v", report.NotProven)
+	}
+}
+
+func TestVerifyRejectsCleanArchiveWithUnavailableRequiredCapability(t *testing.T) {
+	t.Parallel()
+
+	archivePath := buildFixtureArchive(t, http.StatusOK)
+	manifest := readManifest(t, archivePath)
+	manifest.Status = archive.StatusCreatedUnverified
+	manifest.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+	manifest.Capabilities = []connector.Capability{{
+		ID: connector.CapabilityItems, Name: "Items", Requirement: connector.CapabilityRequired,
+		Implementation: connector.CapabilitySupported, Availability: connector.CapabilityAvailabilityUnknown,
+		State: connector.CapabilitySupported, Note: "fixture",
+	}}
+	writeManifest(t, archivePath, manifest)
+
+	report := verifyFixture(t, archivePath)
+	if report.Result != ResultFailed {
+		t.Fatalf("result = %s, want %s", report.Result, ResultFailed)
+	}
+	check := checkStatus(t, report, "manifest_integrity")
+	if check.Status != CheckFail || !containsSubstring(check.Findings, "required capability") {
+		t.Fatalf("manifest_integrity = %s %#v", check.Status, check.Findings)
 	}
 }

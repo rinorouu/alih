@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "raw_extraction_run",
+  "status": "COMPLETE",
+  "connector": "clickup",
+  "source": {
+    "workspace_id": "w1",
+    "workspace_name": "Fixture Workspace"
+  },
+  "started_at": "2026-08-31T23:04:22.695364936Z",
+  "finished_at": "2026-08-31T23:04:22.695615433Z",
+  "extracted_by": {
+    "id": "u1",
+    "name": "Fixture User"
+  },
+  "requests": {
+    "attempts": 8,
+    "successful_responses": 8,
+    "failed_attempts": 0,
+    "retried_attempts": 0
+  },
+  "source_consistency": {
+    "atomic": false,
+    "note": "ClickUp does not provide an atomic snapshot; source changes during traversal can produce a failed or time-skewed extraction."
+  },
+  "logical_inventory_digest": "sha256:545b4d9cef03c912713517faf52cecac5fb44e3b85ed59fab49c7dfbf0e37c99"
+}

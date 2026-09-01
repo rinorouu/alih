@@ -84,8 +84,10 @@ func fixtureExtraction() connector.ExtractionResult {
 		ScanResult: connector.ScanResult{
 			Workspace: connector.Workspace{ID: "w1", Name: "Fixture Workspace"},
 			Inventory: connector.Inventory{
-				Spaces: 1, Folders: 0, Lists: 1, Tasks: 2, Subtasks: 1,
+				Containers: 1, Collections: 1, Records: 3, NestedRecords: 1,
 				Comments: 2, Attachments: 1, CustomFields: 1, Relationships: 1,
+				ContainerKinds: map[string]int{"space": 1},
+				RecordKinds:    map[string]int{"task": 2, "subtask": 1},
 			},
 			Capabilities: []connector.Capability{
 				{Name: "Tasks/subtasks", State: connector.CapabilitySupported, Note: "fixture"},
@@ -111,10 +113,39 @@ func fixtureExtraction() connector.ExtractionResult {
 	}
 }
 
+func fixtureExtractionV1(t *testing.T) connector.ExtractionResult {
+	t.Helper()
+	result := fixtureExtraction()
+	contract := clickup.NewClient(nil).CapabilityContract()
+	capabilities, err := connector.ObserveCapabilities(contract, map[connector.CapabilityID]connector.CapabilityAvailability{
+		connector.CapabilityWorkspaceData:      connector.CapabilityAvailabilityAvailable,
+		connector.CapabilityItems:              connector.CapabilityAvailabilityAvailable,
+		connector.CapabilityComments:           connector.CapabilityAvailabilityAvailable,
+		connector.CapabilityAttachmentMetadata: connector.CapabilityAvailabilityAvailable,
+		connector.CapabilityCustomFields:       connector.CapabilityAvailabilityAvailable,
+		connector.CapabilityRelationships:      connector.CapabilityAvailabilityAvailable,
+		connector.CapabilityRawEvidence:        connector.CapabilityAvailabilityAvailable,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+	result.Capabilities = capabilities
+	return result
+}
+
 // buildFixtureArchive produces a complete M4 archive from a complete M3
 // snapshot so that verification is exercised against a real archive rather
 // than a hand-written approximation of one.
 func buildFixtureArchive(t *testing.T, attachmentStatus int) string {
+	return buildFixtureArchiveFromExtraction(t, attachmentStatus, fixtureExtraction())
+}
+
+func buildVersionedFixtureArchive(t *testing.T, attachmentStatus int) string {
+	return buildFixtureArchiveFromExtraction(t, attachmentStatus, fixtureExtractionV1(t))
+}
+
+func buildFixtureArchiveFromExtraction(t *testing.T, attachmentStatus int, extraction connector.ExtractionResult) string {
 	t.Helper()
 	root := t.TempDir()
 	snapshotPath := filepath.Join(root, "m3")
@@ -130,7 +161,7 @@ func buildFixtureArchive(t *testing.T, attachmentStatus int) string {
 			t.Fatal(err)
 		}
 	}
-	if _, err := session.Complete(fixtureExtraction()); err != nil {
+	if _, err := session.Complete(extraction); err != nil {
 		t.Fatal(err)
 	}
 	evidence, err := snapshot.LoadComplete(snapshotPath)

@@ -417,8 +417,8 @@ func TestBuildRejectsPortableModelThatContradictsTheSnapshot(t *testing.T) {
 		name   string
 		damage func(*snapshot.Evidence, *model.Archive)
 	}{
-		{"record count disagrees", func(e *snapshot.Evidence, p *model.Archive) { e.Inventory.Tasks = 99 }},
-		{"collection count disagrees", func(e *snapshot.Evidence, p *model.Archive) { e.Inventory.Lists = 5 }},
+		{"record count disagrees", func(e *snapshot.Evidence, p *model.Archive) { e.Inventory.RecordKinds["task"] = 99 }},
+		{"collection count disagrees", func(e *snapshot.Evidence, p *model.Archive) { e.Inventory.Collections = 5 }},
 		{"connector disagrees", func(e *snapshot.Evidence, p *model.Archive) { p.Connector = "other" }},
 		{"workspace disagrees", func(e *snapshot.Evidence, p *model.Archive) { p.Workspace.Source.ID = "other" }},
 	}

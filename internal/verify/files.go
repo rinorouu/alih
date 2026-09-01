@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"alih/internal/archive"
+	"alih/internal/connector"
 )
 
 // archiveFile is one regular file actually present inside the archive.
@@ -112,14 +113,34 @@ func (v *verification) checkManifest(files map[string]archiveFile) (archive.Mani
 	}
 
 	var findings []string
-	if manifest.SchemaVersion != archive.ArchiveSchemaVersion {
-		findings = append(findings, fmt.Sprintf("unsupported manifest schema_version %d; this Alih build reads version %d", manifest.SchemaVersion, archive.ArchiveSchemaVersion))
+	// Every manifest schema this build knows how to read is accepted; a newer
+	// one is refused rather than guessed at. An archive is verified as the
+	// release that sealed it wrote it, never rewritten to a newer shape.
+	if manifest.SchemaVersion < archive.MinReadableSchemaVersion || manifest.SchemaVersion > archive.ArchiveSchemaVersion {
+		findings = append(findings, fmt.Sprintf("unsupported manifest schema_version %d; this Alih build reads versions %d to %d",
+			manifest.SchemaVersion, archive.MinReadableSchemaVersion, archive.ArchiveSchemaVersion))
 	}
 	if strings.TrimSpace(manifest.Connector) == "" {
 		findings = append(findings, "manifest does not identify the source connector")
 	}
 	if strings.TrimSpace(manifest.Source.ID) == "" {
 		findings = append(findings, "manifest does not identify the source workspace")
+	}
+	if err := connector.ValidateCapabilities(manifest.CapabilitySchemaVersion, manifest.Capabilities); err != nil {
+		findings = append(findings, "manifest capability contract is invalid: "+err.Error())
+	} else if manifest.CapabilitySchemaVersion == connector.CapabilitySchemaVersion && manifest.Status == archive.StatusCreatedUnverified {
+		for _, capability := range manifest.Capabilities {
+			if capability.Requirement == connector.CapabilityRequired && capability.Availability != connector.CapabilityAvailabilityAvailable {
+				findings = append(findings, fmt.Sprintf("required capability %q is %s but the archive claims clean construction", capability.ID, capability.Availability))
+			}
+		}
+	}
+	if manifest.OperationalAssessment != nil {
+		if err := connector.ValidateOperationalAssessment(*manifest.OperationalAssessment); err != nil {
+			findings = append(findings, "manifest operational assessment is invalid: "+err.Error())
+		} else if manifest.Status == archive.StatusCreatedUnverified && manifest.OperationalAssessment.Health.State != connector.HealthHealthy {
+			findings = append(findings, "archive claims clean construction while operational health is not HEALTHY")
+		}
 	}
 	switch manifest.Status {
 	case archive.StatusCreatedUnverified, archive.StatusIncomplete:

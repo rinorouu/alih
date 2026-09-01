@@ -1,0 +1,114 @@
+{
+  "schema_version": 2,
+  "revision": 0,
+  "scope": {
+    "connector": "clickup",
+    "workspace_id": "9001",
+    "destination": "/home/tester/Alih"
+  },
+  "workspace_name": "Example Workspace",
+  "account": {
+    "id": "u-1",
+    "name": "Tester"
+  },
+  "alih_version": "dev",
+  "updated_at": "2026-08-31T09:05:00Z",
+  "operational_assessment": {
+    "schema_version": 1,
+    "health": {
+      "schema_version": 1,
+      "connector": "clickup",
+      "state": "HEALTHY",
+      "basis": "BACKUP",
+      "observed_at": "2026-08-31T09:05:00Z",
+      "reason": "NONE",
+      "retryable": false,
+      "message": "The observed operation completed successfully.",
+      "capabilities": [
+        {
+          "id": "comments",
+          "requirement": "REQUIRED",
+          "state": "HEALTHY",
+          "reason": "NONE",
+          "retryable": false,
+          "message": "Capability completed successfully."
+        },
+        {
+          "id": "items",
+          "requirement": "REQUIRED",
+          "state": "HEALTHY",
+          "reason": "NONE",
+          "retryable": false,
+          "message": "Capability completed successfully."
+        }
+      ]
+    },
+    "authentication": {
+      "state": "AUTHENTICATED",
+      "observed_at": "2026-08-31T09:05:00Z",
+      "reason": "NONE",
+      "message": "Authentication succeeded."
+    }
+  },
+  "capability_schema_version": 1,
+  "capabilities": [
+    {
+      "id": "comments",
+      "name": "Comments",
+      "requirement": "REQUIRED",
+      "implementation": "SUPPORTED",
+      "availability": "AVAILABLE",
+      "state": "SUPPORTED",
+      "note": ""
+    },
+    {
+      "id": "items",
+      "name": "Tasks and subtasks",
+      "requirement": "REQUIRED",
+      "implementation": "SUPPORTED",
+      "availability": "AVAILABLE",
+      "state": "SUPPORTED",
+      "note": ""
+    }
+  ],
+  "last_attempt": {
+    "operation_id": "20260831T090000Z-0badc0de",
+    "operation": "backup",
+    "stage": "finalize",
+    "outcome": "SUCCEEDED",
+    "started_at": "2026-08-31T09:00:00Z",
+    "ended_at": "2026-08-31T09:05:00Z",
+    "archive_path": "/home/tester/Alih/workspace/2026-08-31T090000Z/archive",
+    "report_path": "/home/tester/Alih/workspace/2026-08-31T090000Z/recovery-report.html",
+    "alih_version": "dev"
+  },
+  "last_success": {
+    "operation_id": "20260831T090000Z-0badc0de",
+    "operation": "backup",
+    "stage": "finalize",
+    "outcome": "SUCCEEDED",
+    "started_at": "2026-08-31T09:00:00Z",
+    "ended_at": "2026-08-31T09:05:00Z",
+    "archive_path": "/home/tester/Alih/workspace/2026-08-31T090000Z/archive",
+    "report_path": "/home/tester/Alih/workspace/2026-08-31T090000Z/recovery-report.html",
+    "alih_version": "dev"
+  },
+  "last_verification": {
+    "result": "VERIFIED",
+    "verified_at": "2026-08-31T09:05:00Z",
+    "archive": {
+      "path": "/home/tester/Alih/workspace/2026-08-31T090000Z/archive",
+      "manifest_checksum": "sha256:abababababababababababababababababababababababababababababababab",
+      "logical_inventory_digest": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "archive_status": "CREATED_UNVERIFIED",
+      "archive_completed_at": "2026-08-31T09:05:00Z"
+    },
+    "alih_version": "dev"
+  },
+  "notifications": {
+    "checked_at": "2026-08-31T09:05:00Z",
+    "destination_ids": [
+      "ops"
+    ]
+  }
+}

@@ -196,6 +196,40 @@ func TestReportPreservesCapabilityStatesExactly(t *testing.T) {
 	}
 }
 
+func TestReportExposesVersionedCapabilityIdentityAndRunAvailability(t *testing.T) {
+	t.Parallel()
+
+	inputs := healthyInputs()
+	capability := connector.Capability{
+		ID: connector.CapabilityRelationships, Name: "Task relationships",
+		Requirement: connector.CapabilityRequired, Implementation: connector.CapabilityPartial,
+		Availability: connector.CapabilityAvailabilityAvailable, State: connector.CapabilityPartial,
+		Note: "dependencies and task links only",
+	}
+	inputs.Manifest.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+	inputs.Manifest.Capabilities = []connector.Capability{capability}
+	inputs.Verification.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+	inputs.Verification.Capabilities = []connector.Capability{capability}
+	document := Build(inputs)
+	if document.CapabilitySchemaVersion != connector.CapabilitySchemaVersion || len(document.Capabilities) != 1 {
+		t.Fatalf("report capability contract = v%d %#v", document.CapabilitySchemaVersion, document.Capabilities)
+	}
+	got := document.Capabilities[0]
+	if got.ID != string(connector.CapabilityRelationships) || got.Requirement != string(connector.CapabilityRequired) ||
+		got.Implementation != string(connector.CapabilityPartial) || got.Availability != string(connector.CapabilityAvailabilityAvailable) {
+		t.Fatalf("report capability = %#v", got)
+	}
+	if !strings.Contains(got.ArchiveEvidence, "supported subset passed verification") {
+		t.Fatalf("partial capability evidence = %q", got.ArchiveEvidence)
+	}
+	rendered := renderBoth(t, document)
+	for _, expected := range []string{"relationships", "REQUIRED", "AVAILABLE", "supported subset"} {
+		if !strings.Contains(rendered, expected) {
+			t.Errorf("rendered capability contract omits %q", expected)
+		}
+	}
+}
+
 func TestReportDisclosesNonAtomicSource(t *testing.T) {
 	t.Parallel()
 

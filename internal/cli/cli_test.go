@@ -30,6 +30,7 @@ import (
 
 	"alih/internal/archive"
 	"alih/internal/connector"
+	"alih/internal/connector/clickup"
 	"alih/internal/credentials"
 	"alih/internal/report"
 	"alih/internal/verify"
@@ -491,8 +492,10 @@ func TestScanUsesSavedCredentialAndPrintsCompletedInventory(t *testing.T) {
 	scanner := &stubScanner{result: connector.ScanResult{
 		Workspace: workspace,
 		Inventory: connector.Inventory{
-			Spaces: 1, Folders: 2, Lists: 3, Tasks: 4, Subtasks: 5,
+			Containers: 3, Collections: 3, Records: 9, NestedRecords: 5,
 			Comments: 6, Attachments: 7, CustomFields: 8, Relationships: 9,
+			ContainerKinds: map[string]int{"space": 1, "folder": 2},
+			RecordKinds:    map[string]int{"task": 4, "subtask": 5},
 		},
 		Capabilities: []connector.Capability{
 			{Name: "Tasks/subtasks", State: connector.CapabilitySupported, Note: "complete traversal"},
@@ -522,8 +525,8 @@ func TestScanUsesSavedCredentialAndPrintsCompletedInventory(t *testing.T) {
 		"Workspace: Primary (ID: 100)",
 		"Spaces                 1",
 		"Subtasks               5",
-		"Task comments          6",
-		"Task relationships     9",
+		"Comments               6",
+		"Relationships          9",
 		"Tasks/subtasks         SUPPORTED",
 		"Docs                   PARTIAL",
 		"All supported M2 traversals and pagination completed",
@@ -537,6 +540,95 @@ func TestScanUsesSavedCredentialAndPrintsCompletedInventory(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), token) || strings.Contains(stderr.String(), token) {
 		t.Fatal("scan output exposed the credential")
+	}
+}
+
+func TestPrintScanExposesVersionedCapabilityContract(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	printScan(&output, connector.ScanResult{
+		Workspace:               connector.Workspace{ID: "w1", Name: "Test"},
+		CapabilitySchemaVersion: connector.CapabilitySchemaVersion,
+		Capabilities: []connector.Capability{{
+			ID: connector.CapabilityItems, Name: "Tasks/subtasks", Requirement: connector.CapabilityRequired,
+			Implementation: connector.CapabilitySupported, Availability: connector.CapabilityAvailabilityAvailable,
+			State: connector.CapabilitySupported, Note: "complete traversal",
+		}},
+	})
+	for _, expected := range []string{"Tasks/subtasks         SUPPORTED", "required=REQUIRED", "availability=AVAILABLE", "id=items"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Errorf("scan output omits %q: %q", expected, output.String())
+		}
+	}
+}
+
+func TestScanJSONIncludesStableOperationalAssessment(t *testing.T) {
+	t.Parallel()
+	observed := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	workspace := connector.Workspace{ID: "100", Name: "Primary"}
+	capability := connector.Capability{
+		ID: connector.CapabilityItems, Name: "Tasks/subtasks", Requirement: connector.CapabilityRequired,
+		Implementation: connector.CapabilitySupported, Availability: connector.CapabilityAvailabilityAvailable,
+		State: connector.CapabilitySupported, Note: "complete traversal",
+	}
+	assessment, err := connector.HealthyAssessment("clickup", connector.HealthBasisScan, observed, connector.AuthenticationAuthenticated, []connector.Capability{capability})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
+		Authenticator: &stubAuthenticator{result: connector.Authentication{Workspaces: []connector.Workspace{workspace}}},
+		Scanner: &stubScanner{result: connector.ScanResult{
+			Workspace: workspace, CapabilitySchemaVersion: connector.CapabilitySchemaVersion,
+			Capabilities: []connector.Capability{capability}, Assessment: assessment,
+		}},
+		CredentialStore: &stubCredentialStore{loaded: "token"},
+	})
+	if code := app.Run([]string{"scan", "--json"}); code != 0 {
+		t.Fatalf("Run(scan --json) = %d, stderr=%q", code, stderr.String())
+	}
+	var document scanDocument
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("scan JSON invalid: %v\n%s", err, stdout.String())
+	}
+	if document.SchemaVersion != 1 || document.Kind != "connector_scan" || document.Status != "COMPLETE" || document.OperationalAssessment == nil {
+		t.Fatalf("scan document = %#v", document)
+	}
+	if document.OperationalAssessment.Health.State != connector.HealthHealthy || document.OperationalAssessment.Authentication.State != connector.AuthenticationAuthenticated {
+		t.Fatalf("scan assessment = %#v", document.OperationalAssessment)
+	}
+}
+
+func TestScanFailureJSONUsesTypedHealthWithoutLeakingProviderText(t *testing.T) {
+	t.Parallel()
+	const token = "private-token"
+	observed := time.Date(2026, 8, 31, 13, 0, 0, 0, time.UTC)
+	workspace := connector.Workspace{ID: "100", Name: "Primary"}
+	var stdout, stderr bytes.Buffer
+	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
+		Authenticator: &stubAuthenticator{result: connector.Authentication{Workspaces: []connector.Workspace{workspace}}},
+		Scanner: &stubScanner{err: &clickup.Error{
+			Kind: clickup.ErrorAPI, Operation: "list Tasks", StatusCode: 404,
+			Message: "provider says " + token + "\nunsafe",
+		}},
+		CredentialStore: &stubCredentialStore{loaded: token}, Now: func() time.Time { return observed },
+	})
+	if code := app.Run([]string{"scan", "--json"}); code != 1 {
+		t.Fatalf("Run(scan --json) = %d", code)
+	}
+	if strings.Contains(stdout.String(), token) || strings.Contains(stdout.String(), "provider says") {
+		t.Fatalf("failure JSON leaked secret/provider text: %s", stdout.String())
+	}
+	var document scanDocument
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("failure JSON invalid: %v\n%s", err, stdout.String())
+	}
+	if document.Status != "FAILED" || document.OperationalAssessment == nil || document.OperationalAssessment.Health.Reason != connector.HealthReasonCapabilityRemoved {
+		t.Fatalf("failure document = %#v", document)
+	}
+	if len(document.OperationalAssessment.Health.Capabilities) == 0 || document.OperationalAssessment.Health.Capabilities[0].ID != connector.CapabilityItems {
+		t.Fatalf("failure capability scope = %#v", document.OperationalAssessment.Health.Capabilities)
 	}
 }
 

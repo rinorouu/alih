@@ -162,21 +162,22 @@ type Attachment struct {
 // the M4 writer. Capabilities retain source limitations without changing the
 // portable entity schema.
 type Archive struct {
-	Connector         string
-	Workspace         Workspace
-	Containers        []Container
-	Collections       []Collection
-	Records           []Record
-	Identities        []Identity
-	RecordIdentities  []RecordIdentity
-	RecordTags        []RecordTag
-	Comments          []Comment
-	FieldDefinitions  []FieldDefinition
-	RecordFieldValues []RecordFieldValue
-	Relationships     []Relationship
-	Attachments       []Attachment
-	Capabilities      []connector.Capability
-	Limitations       []string
+	Connector               string
+	Workspace               Workspace
+	Containers              []Container
+	Collections             []Collection
+	Records                 []Record
+	Identities              []Identity
+	RecordIdentities        []RecordIdentity
+	RecordTags              []RecordTag
+	Comments                []Comment
+	FieldDefinitions        []FieldDefinition
+	RecordFieldValues       []RecordFieldValue
+	Relationships           []Relationship
+	Attachments             []Attachment
+	CapabilitySchemaVersion int
+	Capabilities            []connector.Capability
+	Limitations             []string
 }
 
 // PortableID deterministically maps an original provider identifier into the

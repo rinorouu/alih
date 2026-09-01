@@ -30,10 +30,13 @@ import (
 	"sync"
 	"time"
 
+	"alih/internal/buildinfo"
 	"alih/internal/connector"
 )
 
-const schemaVersion = 1
+// schemaVersion 2 records the provider-neutral inventory vocabulary. Version 1
+// snapshots remain readable and keep their original digest basis.
+const schemaVersion = 2
 
 type requestRecord struct {
 	Sequence   int    `json:"sequence"`
@@ -72,18 +75,20 @@ type requestSummary struct {
 }
 
 type runRecord struct {
-	SchemaVersion int               `json:"schema_version"`
-	Kind          string            `json:"kind"`
-	Status        string            `json:"status"`
-	Connector     string            `json:"connector"`
-	Source        sourceDescriptor  `json:"source"`
-	StartedAt     time.Time         `json:"started_at"`
-	FinishedAt    time.Time         `json:"finished_at"`
-	ExtractedBy   *identityRecord   `json:"extracted_by,omitempty"`
-	Requests      requestSummary    `json:"requests"`
-	Consistency   consistencyRecord `json:"source_consistency"`
-	LogicalDigest string            `json:"logical_inventory_digest,omitempty"`
-	Failure       string            `json:"failure,omitempty"`
+	SchemaVersion    int               `json:"schema_version"`
+	Kind             string            `json:"kind"`
+	Status           string            `json:"status"`
+	AlihVersion      string            `json:"alih_version,omitempty"`
+	Connector        string            `json:"connector"`
+	Source           sourceDescriptor  `json:"source"`
+	StartedAt        time.Time         `json:"started_at"`
+	FinishedAt       time.Time         `json:"finished_at"`
+	ExtractedBy      *identityRecord   `json:"extracted_by,omitempty"`
+	Requests         requestSummary    `json:"requests"`
+	Consistency      consistencyRecord `json:"source_consistency"`
+	LogicalDigest    string            `json:"logical_inventory_digest,omitempty"`
+	CapabilityDigest string            `json:"capability_digest,omitempty"`
+	Failure          string            `json:"failure,omitempty"`
 }
 
 type consistencyRecord struct {
@@ -92,20 +97,23 @@ type consistencyRecord struct {
 }
 
 type inventoryRecord struct {
-	SchemaVersion int                      `json:"schema_version"`
-	Kind          string                   `json:"kind"`
-	Connector     string                   `json:"connector"`
-	WorkspaceID   string                   `json:"workspace_id"`
-	Counts        connector.Inventory      `json:"counts"`
-	Capabilities  []connector.Capability   `json:"capabilities"`
-	SourceObjects []connector.SourceObject `json:"source_objects"`
-	LogicalDigest string                   `json:"logical_digest"`
+	SchemaVersion           int                              `json:"schema_version"`
+	Kind                    string                           `json:"kind"`
+	Connector               string                           `json:"connector"`
+	WorkspaceID             string                           `json:"workspace_id"`
+	Counts                  connector.Inventory              `json:"counts"`
+	CapabilitySchemaVersion int                              `json:"capability_schema_version,omitempty"`
+	Capabilities            []connector.Capability           `json:"capabilities"`
+	CapabilityDigest        string                           `json:"capability_digest,omitempty"`
+	OperationalAssessment   *connector.OperationalAssessment `json:"operational_assessment,omitempty"`
+	SourceObjects           []connector.SourceObject         `json:"source_objects"`
+	LogicalDigest           string                           `json:"logical_digest"`
 }
 
 type digestInput struct {
 	Connector     string                   `json:"connector"`
 	WorkspaceID   string                   `json:"workspace_id"`
-	Counts        connector.Inventory      `json:"counts"`
+	Counts        any                      `json:"counts"`
 	SourceObjects []connector.SourceObject `json:"source_objects"`
 }
 
@@ -129,6 +137,8 @@ type Session struct {
 	identity      connector.Identity
 	secrets       []string
 	startedAt     time.Time
+	alihVersion   string
+	consistency   Consistency
 	records       []requestRecord
 	rawResponses  int
 	closed        bool
@@ -139,7 +149,42 @@ type Session struct {
 // recorded so the archive states whose access it represents. secrets are held
 // only in memory and used to reject or redact accidental credential exposure;
 // they are never written to the snapshot.
+// Options carries provenance that the caller, not this package, is the source
+// of truth for. An empty AlihVersion falls back to the build's own identity so
+// that a snapshot can never claim a version nobody built.
+type Options struct {
+	AlihVersion string
+	// Consistency is what the connector claims about reading its source in one
+	// pass. Alih cannot know this for a provider it was not told about, so the
+	// zero value is the conservative claim: not atomic, described in
+	// provider-neutral words. A connector that can prove otherwise says so.
+	Consistency Consistency
+}
+
+// Consistency is a connector's claim about point-in-time consistency.
+type Consistency struct {
+	Atomic bool
+	Note   string
+}
+
+// defaultConsistencyNote is what Alih records when a connector states nothing.
+// It says only what is true of any API traversal, and names no provider.
+const defaultConsistencyNote = "The source API does not provide an atomic snapshot; records may reflect different moments within the traversal."
+
+func (c Consistency) resolve() Consistency {
+	if strings.TrimSpace(c.Note) == "" {
+		c.Note = defaultConsistencyNote
+	}
+	return c
+}
+
+// Begin starts a raw extraction session using the running build's identity.
 func Begin(targetPath, connectorName string, workspace connector.Workspace, identity connector.Identity, secrets ...string) (*Session, error) {
+	return BeginWithOptions(targetPath, connectorName, workspace, identity, Options{}, secrets...)
+}
+
+// BeginWithOptions starts a raw extraction session with injected provenance.
+func BeginWithOptions(targetPath, connectorName string, workspace connector.Workspace, identity connector.Identity, options Options, secrets ...string) (*Session, error) {
 	if strings.TrimSpace(targetPath) == "" {
 		return nil, errors.New("raw snapshot output path is required")
 	}
@@ -179,6 +224,8 @@ func Begin(targetPath, connectorName string, workspace connector.Workspace, iden
 	session := &Session{
 		targetPath: absolute, stagingPath: staging, connectorName: connectorName,
 		workspace: workspace, identity: identity, secrets: filteredSecrets, startedAt: time.Now().UTC(),
+		alihVersion: buildinfo.Resolve(options.AlihVersion),
+		consistency: options.Consistency.resolve(),
 	}
 	if session.containsSecret([]byte(identity.ID + "\x00" + identity.Name)) {
 		_ = os.RemoveAll(staging)
@@ -272,14 +319,49 @@ func (session *Session) Complete(result connector.ExtractionResult) (Summary, er
 	if err := validateSourceObjects(objects); err != nil {
 		return Summary{}, fmt.Errorf("validate source object index: %w", err)
 	}
-	digest, err := logicalDigest(session.connectorName, session.workspace.ID, result.Inventory, objects)
+	for _, capability := range result.Capabilities {
+		serialized := strings.Join([]string{
+			string(capability.ID), capability.Name, string(capability.Requirement),
+			string(capability.Implementation), string(capability.Availability),
+			string(capability.State), capability.Note,
+		}, "\x00")
+		if session.containsSecret([]byte(serialized)) {
+			return Summary{}, errors.New("capability contract contains a configured credential")
+		}
+	}
+	if err := connector.ValidateCapabilities(result.CapabilitySchemaVersion, result.Capabilities); err != nil {
+		return Summary{}, fmt.Errorf("validate capability contract: %w", err)
+	}
+	capabilityDigest, err := connector.CapabilityDigest(result.CapabilitySchemaVersion, session.connectorName, result.Capabilities)
+	if err != nil {
+		return Summary{}, fmt.Errorf("digest capability contract: %w", err)
+	}
+	digest, err := logicalDigest(schemaVersion, session.connectorName, session.workspace.ID, result.Inventory, objects)
 	if err != nil {
 		return Summary{}, err
 	}
 	inventory := inventoryRecord{
 		SchemaVersion: schemaVersion, Kind: "raw_source_inventory", Connector: session.connectorName,
-		WorkspaceID: session.workspace.ID, Counts: result.Inventory, Capabilities: result.Capabilities,
-		SourceObjects: objects, LogicalDigest: digest,
+		WorkspaceID: session.workspace.ID, Counts: result.Inventory,
+		CapabilitySchemaVersion: result.CapabilitySchemaVersion,
+		Capabilities:            connector.CanonicalCapabilities(result.CapabilitySchemaVersion, result.Capabilities),
+		CapabilityDigest:        capabilityDigest,
+		SourceObjects:           objects, LogicalDigest: digest,
+	}
+	if result.Assessment.SchemaVersion != 0 {
+		if err := connector.ValidateOperationalAssessment(result.Assessment); err != nil {
+			return Summary{}, fmt.Errorf("validate operational assessment: %w", err)
+		}
+		assessment := result.Assessment
+		connector.CanonicalizeOperationalAssessment(&assessment)
+		encodedAssessment, err := json.Marshal(assessment)
+		if err != nil {
+			return Summary{}, fmt.Errorf("encode operational assessment: %w", err)
+		}
+		if session.containsSecret(encodedAssessment) {
+			return Summary{}, errors.New("operational assessment contains a configured credential")
+		}
+		inventory.OperationalAssessment = &assessment
 	}
 	finishedAt := time.Now().UTC()
 	if err := writeJSONReplace(filepath.Join(session.stagingPath, "inventory.json"), inventory); err != nil {
@@ -291,6 +373,7 @@ func (session *Session) Complete(result connector.ExtractionResult) (Summary, er
 	summary := summarize(session.records)
 	run := session.runRecord("COMPLETE", finishedAt, summary)
 	run.LogicalDigest = digest
+	run.CapabilityDigest = capabilityDigest
 	if err := writeJSONReplace(filepath.Join(session.stagingPath, "run.json"), run); err != nil {
 		return Summary{}, fmt.Errorf("write extraction run record: %w", err)
 	}
@@ -346,13 +429,14 @@ func (session *Session) runRecord(status string, finishedAt time.Time, requests 
 	}
 	return runRecord{
 		SchemaVersion: schemaVersion, Kind: "raw_extraction_run", Status: status,
+		AlihVersion: session.alihVersion,
 		Connector:   session.connectorName,
 		ExtractedBy: extractedBy,
 		Source:      sourceDescriptor{WorkspaceID: session.redact(session.workspace.ID), WorkspaceName: session.redact(session.workspace.Name)},
 		StartedAt:   session.startedAt, FinishedAt: finishedAt, Requests: requests,
 		Consistency: consistencyRecord{
-			Atomic: false,
-			Note:   "ClickUp does not provide an atomic snapshot; source changes during traversal can produce a failed or time-skewed extraction.",
+			Atomic: session.consistency.Atomic,
+			Note:   session.consistency.Note,
 		},
 	}
 }
@@ -376,9 +460,20 @@ func summarize(records []requestRecord) requestSummary {
 	return summary
 }
 
-func logicalDigest(connectorName, workspaceID string, counts connector.Inventory, objects []connector.SourceObject) (string, error) {
+// logicalDigest binds the connector, the workspace, the counts, and the source
+// index into one identity.
+//
+// The counts are encoded in the vocabulary the snapshot was recorded in, not
+// the vocabulary the running build prefers. A snapshot sealed by an earlier
+// release must reproduce its own digest exactly, or every archive built from it
+// would stop verifying the day Alih changed a field name.
+func logicalDigest(snapshotSchema int, connectorName, workspaceID string, counts connector.Inventory, objects []connector.SourceObject) (string, error) {
+	encoded := any(counts)
+	if snapshotSchema < 2 {
+		encoded = counts.Legacy()
+	}
 	payload, err := json.Marshal(digestInput{
-		Connector: connectorName, WorkspaceID: workspaceID, Counts: counts, SourceObjects: objects,
+		Connector: connectorName, WorkspaceID: workspaceID, Counts: encoded, SourceObjects: objects,
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode logical inventory: %w", err)

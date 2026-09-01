@@ -25,6 +25,7 @@ import (
 const (
 	logLevelEnvironmentVariable     = "ALIH_LOG_LEVEL"
 	clickUpTokenEnvironmentVariable = "ALIH_CLICKUP_TOKEN"
+	saveCredentialEnvironmentVar    = "ALIH_SAVE_CREDENTIAL"
 )
 
 // Config contains process-level settings that are safe to pass between Alih
@@ -33,6 +34,13 @@ type Config struct {
 	LogLevel        slog.Level
 	ClickUpToken    string
 	ClickUpTokenSet bool
+	// SaveCredential reports whether a credential supplied through the
+	// environment may also be written to the local credential store. It
+	// defaults to true, which is what a person setting Alih up once expects.
+	// An unattended installation whose credential is injected per run — from a
+	// secrets manager, a CI secret, or an ephemeral container — can set
+	// ALIH_SAVE_CREDENTIAL=0 so the credential stays where its owner put it.
+	SaveCredential bool
 }
 
 // Load reads configuration from the local process environment.
@@ -41,7 +49,7 @@ func Load() (Config, error) {
 }
 
 func load(lookupEnv func(string) (string, bool)) (Config, error) {
-	cfg := Config{LogLevel: slog.LevelInfo}
+	cfg := Config{LogLevel: slog.LevelInfo, SaveCredential: true}
 
 	value, ok := lookupEnv(logLevelEnvironmentVariable)
 	if ok && strings.TrimSpace(value) != "" {
@@ -53,6 +61,17 @@ func load(lookupEnv func(string) (string, bool)) (Config, error) {
 	token, tokenSet := lookupEnv(clickUpTokenEnvironmentVariable)
 	cfg.ClickUpToken = token
 	cfg.ClickUpTokenSet = tokenSet
+
+	if value, ok := lookupEnv(saveCredentialEnvironmentVar); ok {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "0", "false", "no", "off", "never":
+			cfg.SaveCredential = false
+		case "", "1", "true", "yes", "on", "always":
+			cfg.SaveCredential = true
+		default:
+			return Config{}, fmt.Errorf("%s: %q is not a boolean value", saveCredentialEnvironmentVar, value)
+		}
+	}
 
 	return cfg, nil
 }

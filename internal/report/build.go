@@ -32,19 +32,19 @@ var recoveryClaims = []struct {
 	basedOn []string
 }{
 	{
-		"The portable database alih.db opens and passes SQLite's own integrity check, so archived rows can be queried locally with ordinary SQLite tools and without ClickUp.",
+		"The portable database alih.db opens and passes SQLite's own integrity check, so archived rows can be queried locally with ordinary SQLite tools and without {connector}.",
 		[]string{"sqlite_integrity"},
 	},
 	{
-		"schema.json describes exactly the tables and columns present in alih.db, so the archive explains its own structure without reference to ClickUp.",
+		"schema.json describes exactly the tables and columns present in alih.db, so the archive explains its own structure without reference to {connector}.",
 		[]string{"schema_consistency"},
 	},
 	{
-		"Every archived row still carries its original ClickUp identifiers and a path into raw/, so any archived object can be traced back to the exact API response it came from.",
+		"Every archived row still carries its original {connector} identifiers and a path into raw/, so any archived object can be traced back to the exact API response it came from.",
 		[]string{"portable_identifier_derivation", "raw_evidence_references"},
 	},
 	{
-		"The raw ClickUp API responses stored in raw/ still match the checksums recorded when they were captured, so the underlying evidence is intact and re-readable.",
+		"The raw {connector} API responses stored in raw/ still match the checksums recorded when they were captured, so the underlying evidence is intact and re-readable.",
 		[]string{"raw_evidence_integrity"},
 	},
 	{
@@ -113,7 +113,7 @@ func archiveContentStatement(inputs Inputs, statuses map[string]string) Statemen
 		return Statement{}
 	}
 	statement := Statement{
-		Claim:   "The archive holds " + joinWithAnd(parts) + ", readable from alih.db without ClickUp.",
+		Claim:   "The archive holds " + joinWithAnd(parts) + ", readable from alih.db without {connector}.",
 		Proven:  true,
 		BasedOn: []string{"sqlite_integrity", "count_reconciliation"},
 	}
@@ -156,8 +156,23 @@ func capabilityMeaning(state connector.CapabilityState) string {
 // verification: the source did expose it, and this archive did not keep it
 // intact. Collapsing the two would either excuse a corrupt archive or wrongly
 // demote a source capability.
-func capabilityEvidence(state connector.CapabilityState, result string) string {
-	if state != connector.CapabilitySupported {
+func capabilityEvidence(capability connector.Capability, result string) string {
+	if capability.ID != "" {
+		if capability.Availability != connector.CapabilityAvailabilityAvailable {
+			return fmt.Sprintf("The connector implements this capability, but its availability for this archive operation is %s; see verification and discrepancies before making a recovery claim.", capability.Availability)
+		}
+		if capability.State == connector.CapabilityPartial {
+			switch result {
+			case verify.ResultVerified, verify.ResultVerifiedWithLimitations:
+				return "The connector's explicitly supported subset passed verification; nothing outside that partial scope is claimed."
+			case verify.ResultIncomplete:
+				return "The connector implements only a subset and this archive is also incomplete; see entity coverage and discrepancies."
+			default:
+				return "The connector implements only a subset and verification of this archive failed."
+			}
+		}
+	}
+	if capability.State != connector.CapabilitySupported {
 		return "Not archived, so this archive makes no integrity claim about it."
 	}
 	switch result {
@@ -178,9 +193,11 @@ func buildCapabilities(inputs Inputs, statuses map[string]string) []Capability {
 	capabilities := make([]Capability, 0, len(source))
 	for _, capability := range source {
 		capabilities = append(capabilities, Capability{
-			Name: capability.Name, State: string(capability.State), Note: capability.Note,
+			ID: string(capability.ID), Name: capability.Name,
+			Requirement: string(capability.Requirement), Implementation: string(capability.Implementation),
+			Availability: string(capability.Availability), State: string(capability.State), Note: capability.Note,
 			RecoveryMeaning: capabilityMeaning(capability.State),
-			ArchiveEvidence: capabilityEvidence(capability.State, inputs.Verification.Result),
+			ArchiveEvidence: capabilityEvidence(capability, inputs.Verification.Result),
 		})
 	}
 	return capabilities
@@ -270,7 +287,7 @@ func buildMustNotClaim(inputs Inputs, document Document, statuses map[string]str
 		claims = append(claims, "Do not claim anything about what this archive contains: its manifest could not be read, so the archive does not state what it is.")
 	}
 	claims = append(claims, "Do not claim executable source semantics for Custom Fields. Values are archived as observed data only; formulas, rollups and other computed fields are not reconstructable from this archive.")
-	claims = append(claims, "Do not claim this archive reproduces ClickUp. It preserves only the portable representation described in schema.json; anything outside that representation, including permissions, automations, views and source-side rendering, is not archived.")
+	claims = append(claims, "Do not claim this archive reproduces {connector}. It preserves only the portable representation described in schema.json; anything outside that representation, including permissions, automations, views and source-side rendering, is not archived.")
 	for _, capability := range document.Capabilities {
 		if connector.CapabilityState(capability.State) == connector.CapabilitySupported {
 			continue
@@ -289,7 +306,7 @@ func buildMustNotClaim(inputs Inputs, document Document, statuses map[string]str
 	if statuses["source_object_reconciliation"] != verify.CheckPass {
 		claims = append(claims, "Do not claim this archive contains everything the extraction observed: the source-object reconciliation did not pass.")
 	}
-	claims = append(claims, "Do not read this report as a statement about the source today. It describes archived evidence only; ALIH did not re-read ClickUp to produce it.")
+	claims = append(claims, "Do not read this report as a statement about the source today. It describes archived evidence only; ALIH did not re-read {connector} to produce it.")
 	return dedupe(claims)
 }
 
@@ -300,13 +317,13 @@ func buildConclusion(inputs Inputs, document Document) Conclusion {
 		conclusion.Verdict = "Archive integrity is proven within ALIH's supported scope."
 		conclusion.Statements = []string{
 			"Everything ALIH expected within its supported scope is archived, and every archived byte matches the evidence recorded for it.",
-			"The archived data can be read and queried locally without ClickUp.",
+			"The archived data can be read and queried locally without {connector}.",
 		}
 	case verify.ResultVerifiedWithLimitations:
 		conclusion.Verdict = "Archive integrity is proven within ALIH's supported scope; the source limitations below still apply and this archive does not resolve them."
 		conclusion.Statements = []string{
 			"Everything ALIH expected within its supported scope is archived, and every archived byte matches the evidence recorded for it.",
-			"The archived data can be read and queried locally without ClickUp.",
+			"The archived data can be read and queried locally without {connector}.",
 			"Source capabilities that are not SUPPORTED were never archived and remain outside anything this archive can prove; their state has not been changed by verification or by this report.",
 		}
 	case verify.ResultIncomplete:

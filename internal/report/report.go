@@ -24,10 +24,12 @@ package report
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"alih/internal/archive"
+	"alih/internal/connector"
 	"alih/internal/verify"
 )
 
@@ -119,12 +121,16 @@ type Attachments struct {
 // Capability restates a source capability and what it means for recovery. The
 // state is never rewritten: UNKNOWN stays UNKNOWN and PARTIAL stays PARTIAL.
 //
-// State describes the source: what ClickUp's API exposes and what Alih has
+// State describes the source: what the connector's API exposes and what Alih has
 // implemented for it. ArchiveEvidence describes this particular archive. The
 // two are deliberately separate, because a capability can remain SUPPORTED at
 // the source while the integrity of this archive's copy of it has failed.
 type Capability struct {
+	ID              string `json:"id,omitempty"`
 	Name            string `json:"name"`
+	Requirement     string `json:"requirement,omitempty"`
+	Implementation  string `json:"implementation,omitempty"`
+	Availability    string `json:"availability,omitempty"`
 	State           string `json:"state"`
 	Note            string `json:"note"`
 	RecoveryMeaning string `json:"recovery_meaning"`
@@ -148,21 +154,23 @@ type Conclusion struct {
 
 // Document is the complete machine-readable recovery report.
 type Document struct {
-	SchemaVersion int              `json:"schema_version"`
-	Kind          string           `json:"kind"`
-	AlihVersion   string           `json:"alih_version"`
-	GeneratedAt   time.Time        `json:"generated_at"`
-	Identity      Identity         `json:"archive_identity"`
-	Verification  Verification     `json:"verification"`
-	Recovery      []Statement      `json:"recovery_summary"`
-	Coverage      []EntityCoverage `json:"entity_coverage"`
-	Attachments   Attachments      `json:"attachments"`
-	Capabilities  []Capability     `json:"capability_coverage"`
-	Limitations   []string         `json:"limitations"`
-	NotProven     []string         `json:"unproven_claims"`
-	Discrepancies []Item           `json:"discrepancies"`
-	MustNotClaim  []string         `json:"must_not_be_claimed"`
-	Conclusion    Conclusion       `json:"recovery_conclusion"`
+	SchemaVersion           int                              `json:"schema_version"`
+	Kind                    string                           `json:"kind"`
+	AlihVersion             string                           `json:"alih_version"`
+	GeneratedAt             time.Time                        `json:"generated_at"`
+	Identity                Identity                         `json:"archive_identity"`
+	Verification            Verification                     `json:"verification"`
+	Recovery                []Statement                      `json:"recovery_summary"`
+	Coverage                []EntityCoverage                 `json:"entity_coverage"`
+	Attachments             Attachments                      `json:"attachments"`
+	CapabilitySchemaVersion int                              `json:"capability_schema_version,omitempty"`
+	Capabilities            []Capability                     `json:"capability_coverage"`
+	OperationalAssessment   *connector.OperationalAssessment `json:"operational_assessment,omitempty"`
+	Limitations             []string                         `json:"limitations"`
+	NotProven               []string                         `json:"unproven_claims"`
+	Discrepancies           []Item                           `json:"discrepancies"`
+	MustNotClaim            []string                         `json:"must_not_be_claimed"`
+	Conclusion              Conclusion                       `json:"recovery_conclusion"`
 }
 
 // Failed reports whether the archive this report describes did not pass
@@ -183,30 +191,103 @@ type Inputs struct {
 	Verification      verify.Report
 	GeneratedAt       time.Time
 	AlihVersion       string
+	// ConnectorDisplayName names the provider in the report's prose. A schema 3
+	// archive records its own; this is the fallback for an archive sealed
+	// before that field existed, supplied by the build that knows the adapter.
+	// When neither is available the connector identifier is used, because a
+	// wrong provider name is worse than an unpolished one.
+	ConnectorDisplayName string
+}
+
+// connectorDisplayName resolves how to name the provider in prose. The archive
+// speaks for itself first: a report is written about an archive, which may come
+// from a connector this build does not ship.
+func connectorDisplayName(inputs Inputs) string {
+	if inputs.ManifestAvailable {
+		if name := strings.TrimSpace(inputs.Manifest.ConnectorDisplayName); name != "" {
+			return name
+		}
+	}
+	if name := strings.TrimSpace(inputs.ConnectorDisplayName); name != "" {
+		return name
+	}
+	if inputs.ManifestAvailable {
+		if name := strings.TrimSpace(inputs.Manifest.Connector); name != "" {
+			return name
+		}
+	}
+	if name := strings.TrimSpace(inputs.Verification.Connector); name != "" {
+		return name
+	}
+	return "the source"
 }
 
 // Build assembles the recovery report. It performs no I/O and makes no source
 // access, so it can only restate the evidence it was given.
 func Build(inputs Inputs) Document {
 	statuses := checkStatuses(inputs.Verification)
+	capabilitySchemaVersion := inputs.Verification.CapabilitySchemaVersion
+	if capabilitySchemaVersion == 0 && inputs.ManifestAvailable {
+		capabilitySchemaVersion = inputs.Manifest.CapabilitySchemaVersion
+	}
 	document := Document{
-		SchemaVersion: SchemaVersion,
-		Kind:          Kind,
-		AlihVersion:   inputs.AlihVersion,
-		GeneratedAt:   inputs.GeneratedAt.UTC(),
-		Identity:      buildIdentity(inputs),
-		Verification:  buildVerification(inputs.Verification),
-		Recovery:      buildRecovery(inputs, statuses),
-		Coverage:      buildCoverage(inputs.Verification),
-		Attachments:   buildAttachments(inputs, statuses),
-		Capabilities:  buildCapabilities(inputs, statuses),
-		Limitations:   append([]string(nil), inputs.Verification.Limitations...),
-		NotProven:     append([]string(nil), inputs.Verification.NotProven...),
-		Discrepancies: buildDiscrepancies(inputs),
+		SchemaVersion:           SchemaVersion,
+		Kind:                    Kind,
+		AlihVersion:             inputs.AlihVersion,
+		GeneratedAt:             inputs.GeneratedAt.UTC(),
+		Identity:                buildIdentity(inputs),
+		Verification:            buildVerification(inputs.Verification),
+		Recovery:                buildRecovery(inputs, statuses),
+		Coverage:                buildCoverage(inputs.Verification),
+		Attachments:             buildAttachments(inputs, statuses),
+		CapabilitySchemaVersion: capabilitySchemaVersion,
+		Capabilities:            buildCapabilities(inputs, statuses),
+		OperationalAssessment:   inputs.Verification.OperationalAssessment,
+		Limitations:             append([]string(nil), inputs.Verification.Limitations...),
+		NotProven:               append([]string(nil), inputs.Verification.NotProven...),
+		Discrepancies:           buildDiscrepancies(inputs),
+	}
+	if document.OperationalAssessment == nil && inputs.ManifestAvailable {
+		document.OperationalAssessment = inputs.Manifest.OperationalAssessment
 	}
 	document.MustNotClaim = buildMustNotClaim(inputs, document, statuses)
 	document.Conclusion = buildConclusion(inputs, document)
+	// The report's prose is written about whichever connector produced the
+	// archive. Substituting at the end, over the whole document, means a new
+	// statement cannot ship with an unresolved placeholder in it.
+	substituteConnectorName(&document, connectorDisplayName(inputs))
 	return document
+}
+
+// connectorPlaceholder marks where the provider's name belongs in report prose.
+const connectorPlaceholder = "{connector}"
+
+// substituteConnectorName replaces the placeholder in every string the document
+// carries. It walks by reflection rather than by a list of fields, because a
+// list is something a later change can quietly fall off.
+func substituteConnectorName(document *Document, name string) {
+	substituteStrings(reflect.ValueOf(document).Elem(), name)
+}
+
+func substituteStrings(value reflect.Value, name string) {
+	switch value.Kind() {
+	case reflect.String:
+		if value.CanSet() && strings.Contains(value.String(), connectorPlaceholder) {
+			value.SetString(strings.ReplaceAll(value.String(), connectorPlaceholder, name))
+		}
+	case reflect.Pointer, reflect.Interface:
+		if !value.IsNil() {
+			substituteStrings(value.Elem(), name)
+		}
+	case reflect.Slice, reflect.Array:
+		for index := 0; index < value.Len(); index++ {
+			substituteStrings(value.Index(index), name)
+		}
+	case reflect.Struct:
+		for index := 0; index < value.NumField(); index++ {
+			substituteStrings(value.Field(index), name)
+		}
+	}
 }
 
 func checkStatuses(verification verify.Report) map[string]string {

@@ -28,6 +28,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -35,8 +36,13 @@ import (
 	"alih/internal/archive"
 	"alih/internal/connector"
 	"alih/internal/credentials"
+	"alih/internal/event"
+	"alih/internal/notify"
+	"alih/internal/organize"
 	"alih/internal/report"
+	"alih/internal/schedule"
 	"alih/internal/snapshot"
+	"alih/internal/state"
 	"alih/internal/verify"
 )
 
@@ -57,6 +63,10 @@ Commands:
   export       Build an unverified M4 portable archive from an M3 snapshot
   verify       Independently verify an existing M4 portable archive
   report       Produce a human-readable recovery report for an archive
+  status       Report what ALIH has recorded about its own local operations
+  notify       Check notification configuration or explicitly replay an event
+  schedule     Preview and manage native recurring backup schedules
+  organize     Build a safe browsing view from a verified archive
 
 Get started:
   1. Set ALIH_CLICKUP_TOKEN in your environment.
@@ -71,6 +81,43 @@ Flags:
   --version    Print the ALIH version
 `
 
+const statusHelpText = `Report what ALIH has recorded about its own operations.
+
+Usage:
+  alih status [--json] [--refresh] [--reconcile]
+
+Status reads local records only and makes no source request. It reports the
+last attempt, the last successful backup, the recorded verification and whether
+the archive it refers to is still unchanged, plus the connector health and
+authentication observed at the time, each with its own observation age. An
+observation older than 24 hours is marked stale: it is what was true then, not
+a statement about now. --refresh makes exactly one authentication request and
+updates only the scopes that request covers.
+
+Status also summarises the local event history for each scope: how many
+transitions were recorded, how many failed, and the most recent one. That
+history is context only. It never decides the status, so damaged or missing
+history leaves the reported status and exit code unchanged.
+
+--reconcile reads the backup destination itself, independently verifies every
+archive it finds there, and records what that verification proves. It is how a
+backup that ALIH has no record of becomes visible again. Which source an
+archive belongs to is read from the archive's own sealed manifest, never from a
+directory name; a preserved .failed run or an abandoned working directory is
+reported but never counted as a backup; and an archive that cannot be verified
+now is reported and left alone.
+
+--json prints one stable document on standard output; diagnostics stay on
+standard error.
+
+Exit codes:
+  0  every recorded scope is healthy
+  1  at least one scope needs attention
+  2  usage error
+  3  nothing is recorded, or nothing recorded can be called healthy
+  4  local state exists but cannot be read; ALIH never rewrites it
+`
+
 const versionHelpText = `Print the ALIH version.
 
 Usage:
@@ -80,10 +127,13 @@ Usage:
 const backupHelpText = `ALIH creates a verified portable ClickUp backup.
 
 Usage:
-  alih backup [--workspace-id ID]
+  alih backup [--workspace-id ID] [--destination PATH]
 
 If exactly one Workspace is accessible, it is selected automatically.
 If multiple Workspaces are accessible, --workspace-id is required.
+--destination selects an absolute local backup root. The default remains
+~/Alih. Alih never writes a credential into that path or into scheduled command
+arguments.
 
 The default backup directory is ~/Alih/<workspace>/<UTC-start-time>/ and is
 never overwritten. It contains the sealed M4 archive in archive/ and the
@@ -110,12 +160,13 @@ The token is never accepted as a command-line argument.
 const scanHelpText = `Inventory one ClickUp Workspace through the official read-only API.
 
 Usage:
-  alih scan [--workspace-id ID]
+  alih scan [--workspace-id ID] [--json]
 
 If exactly one Workspace is accessible, it is selected automatically.
 If multiple Workspaces are accessible, --workspace-id is required.
 The token is loaded from ALIH_CLICKUP_TOKEN or the verified local credential.
 Scan does not create an archive or make a portability-completeness claim.
+--json prints a stable machine-readable scan and operational assessment.
 `
 
 const extractHelpText = `Extract raw ClickUp API evidence for one Workspace.
@@ -217,15 +268,52 @@ type Options struct {
 	CredentialStore     credentialStore
 	EnvironmentToken    string
 	EnvironmentTokenSet bool
+	// SaveEnvironmentCredential reports whether a credential taken from the
+	// environment may also be written to the local credential store. The
+	// application entry point sets it from ALIH_SAVE_CREDENTIAL; the zero value
+	// is deliberately false so an embedded caller persists nothing it did not
+	// ask to persist.
+	SaveEnvironmentCredential bool
 	// Version is the release identity supplied by the application entry point.
 	// An empty value is rendered as dev for local development builds.
 	Version string
 	// BackupRoot overrides ~/Alih for tests or an explicitly embedded caller.
-	// The Alpha CLI deliberately exposes no output-location flag yet.
+	// The command-level --destination flag takes precedence when present.
 	BackupRoot string
+	// LockRoot overrides where cross-process operation locks live. By default
+	// they live in a private hidden directory under the backup destination, so
+	// all Alih installations targeting that destination share the same lock.
+	LockRoot string
 	// Now supplies the backup-run start instant used only in the directory name.
 	// Archive provenance continues to come from the M3/M4 implementations.
 	Now func() time.Time
+	// StateRoot overrides the local operational state directory. An empty value
+	// resolves to the user configuration directory, beside the credential store.
+	StateRoot string
+	// Entropy supplies the random part of an operation ID. An empty value uses
+	// the system source; tests inject a deterministic reader.
+	Entropy io.Reader
+	// EventSink overrides where operational events are recorded. An empty value
+	// writes the bounded local log beside the operational state.
+	EventSink event.Sink
+	// NotificationRoot overrides the directory containing notifications.json.
+	// It is separate from StateRoot because production configuration lives one
+	// level above the state files; tests inject both explicitly.
+	NotificationRoot string
+	// Notifier overrides the one webhook transport. An empty value uses the
+	// bounded HTTPS implementation; tests inject an in-memory notifier.
+	Notifier notify.Notifier
+	// ScheduleRoot overrides the directory containing schedules.json.
+	ScheduleRoot string
+	// ScheduleRunner injects native scheduler process execution for tests.
+	ScheduleRunner schedule.Runner
+	Organizer      organizedViewBuilder
+	// These values make native plan generation deterministic in tests. Empty
+	// values resolve from the current process.
+	SchedulePlatform string
+	ExecutablePath   string
+	UserHome         string
+	UserID           string
 }
 
 type archiveExporter interface {
@@ -238,6 +326,10 @@ type archiveVerifier interface {
 
 type archiveReporter interface {
 	Report(string) (report.Document, error)
+}
+
+type organizedViewBuilder interface {
+	Build(context.Context, string, string) (organize.Result, error)
 }
 
 // App contains the dependencies for the Alih command-line application.
@@ -283,6 +375,18 @@ func (a *App) Run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "report" {
 		return a.runReport(args[1:])
+	}
+	if len(args) > 0 && args[0] == "status" {
+		return a.runStatus(args[1:])
+	}
+	if len(args) > 0 && args[0] == "notify" {
+		return a.runNotify(args[1:])
+	}
+	if len(args) > 0 && args[0] == "schedule" {
+		return a.runSchedule(args[1:])
+	}
+	if len(args) > 0 && args[0] == "organize" {
+		return a.runOrganize(args[1:])
 	}
 
 	flags := flag.NewFlagSet("alih", flag.ContinueOnError)
@@ -517,6 +621,10 @@ func (a *App) runVerify(args []string) int {
 	} else {
 		printVerification(a.stdout, report)
 	}
+	// A verification result belongs to the archive, not to the run that asked
+	// for it: it is recorded whether it passed or failed, and only for an
+	// archive Alih already knows about.
+	a.recordVerification(target, report)
 	if report.Failed() {
 		fmt.Fprintf(a.stderr, "alih verify: archive result is %s; ALIH cannot present this archive as verified\n", report.Result)
 		return 1
@@ -530,6 +638,10 @@ func printVerification(output io.Writer, report verify.Report) {
 	fmt.Fprintf(output, "Connector: %s\n", displayValue(report.Connector))
 	fmt.Fprintf(output, "Source workspace: %s (ID: %s)\n", displayValue(report.Source.Name), displayValue(report.Source.ID))
 	fmt.Fprintf(output, "Recorded archive status: %s\n", displayValue(report.ArchiveStatus))
+	if report.OperationalAssessment != nil && connector.ValidateOperationalAssessment(*report.OperationalAssessment) == nil {
+		fmt.Fprintln(output, "\nRecorded operational assessment")
+		_ = connector.WriteOperationalAssessmentText(output, *report.OperationalAssessment)
+	}
 
 	if len(report.Reconciliation) > 0 {
 		fmt.Fprintln(output, "\nExpected vs archived")
@@ -553,7 +665,13 @@ func printVerification(output io.Writer, report verify.Report) {
 	if len(report.Capabilities) > 0 {
 		fmt.Fprintln(output, "\nSource capability (preserved unchanged)")
 		for _, capability := range report.Capabilities {
-			fmt.Fprintf(output, "%-22s %-12s %s\n", displayValue(capability.Name), capability.State, displayValue(capability.Note))
+			if report.CapabilitySchemaVersion == connector.CapabilitySchemaVersion {
+				fmt.Fprintf(output, "%-22s %-12s required=%-8s availability=%-11s id=%s  %s\n",
+					displayValue(capability.Name), capability.State, capability.Requirement, capability.Availability,
+					capability.ID, displayValue(capability.Note))
+			} else {
+				fmt.Fprintf(output, "%-22s %-12s %s\n", displayValue(capability.Name), capability.State, displayValue(capability.Note))
+			}
 		}
 	}
 
@@ -638,6 +756,10 @@ func printArchiveSummary(output io.Writer, summary archive.Summary) {
 	fmt.Fprintln(output, "ALIH — PORTABLE ARCHIVE")
 	fmt.Fprintf(output, "\nArchive: %s\n", summary.Path)
 	fmt.Fprintf(output, "Status: %s\n", summary.Status)
+	if summary.OperationalAssessment != nil && connector.ValidateOperationalAssessment(*summary.OperationalAssessment) == nil {
+		fmt.Fprintln(output, "\nOperational assessment")
+		_ = connector.WriteOperationalAssessmentText(output, *summary.OperationalAssessment)
+	}
 	fmt.Fprintln(output, "Verification: NOT_RUN")
 	fmt.Fprintln(output, "\nArchived inventory")
 	for _, name := range []string{"spaces", "folders", "lists", "tasks", "subtasks", "comments", "attachments", "custom_fields", "relationships"} {
@@ -696,29 +818,58 @@ func (a *App) runExtract(args []string) int {
 		return 1
 	}
 	if shouldSave {
-		if err := a.options.CredentialStore.Save(token); err != nil {
-			fmt.Fprintf(a.stderr, "alih extract: verified credential could not be saved: %v\n", err)
-			return 1
+		if err := a.saveVerifiedCredential(token); err != nil {
+			fmt.Fprintf(a.stderr, "alih extract: the verified credential could not be saved: %v\n", err)
+			fmt.Fprintln(a.stderr, "alih extract: continuing; the credential in the environment is still valid for this run")
 		}
 	}
 
-	session, err := snapshot.Begin(*outputPath, a.options.Extractor.Name(), workspace, authentication.Identity, token)
+	// The destination of an extraction is the path the operator chose, so state
+	// is scoped to that path rather than to the backup root they did not use.
+	destination, err := absolutePath(*outputPath)
 	if err != nil {
+		fmt.Fprintf(a.stderr, "alih extract: %v\n", err)
+		return 1
+	}
+	recorder := a.beginOperation(operationStart{
+		ctx:           ctx,
+		operation:     state.OperationExtract,
+		scope:         backupScope(a.options.Extractor.Name(), safeText(workspace.ID, token), destination),
+		startedAt:     a.observedAt(),
+		workspaceName: safeText(workspace.Name, token),
+		identity: connector.Identity{
+			ID:   safeText(authentication.Identity.ID, token),
+			Name: safeText(authentication.Identity.Name, token),
+		},
+	})
+
+	session, err := snapshot.BeginWithOptions(*outputPath, a.options.Extractor.Name(), workspace,
+		authentication.Identity, snapshot.Options{AlihVersion: a.recordedVersion()}, token)
+	if err != nil {
+		recorder.fail(state.StagePrepare, err, "")
 		fmt.Fprintf(a.stderr, "alih extract: create raw snapshot: %v\n", err)
 		return 1
 	}
 	result, err := a.options.Extractor.Extract(ctx, token, workspace, session)
 	if err != nil {
-		return a.failExtraction(session, errors.New(safeError(err, token)), fmt.Sprintf("alih extract: %s", safeError(err, token)))
+		return a.failExtraction(recorder, session, err, fmt.Sprintf("alih extract: %s", safeError(err, token)))
 	}
 	if result.Workspace.ID != workspace.ID {
 		reason := errors.New("connector returned a different Workspace")
-		return a.failExtraction(session, reason, "alih extract: connector returned a different Workspace")
+		return a.failExtraction(recorder, session, reason, "alih extract: connector returned a different Workspace")
 	}
 	summary, err := session.Complete(result)
 	if err != nil {
-		return a.failExtraction(session, err, fmt.Sprintf("alih extract: finalize raw snapshot: %v", err))
+		return a.failExtraction(recorder, session, err, fmt.Sprintf("alih extract: finalize raw snapshot: %v", err))
 	}
+	// A raw snapshot is not an archive, so this run can never become the last
+	// known successful backup; it only records that the attempt succeeded.
+	assessment := result.Assessment
+	recorder.succeed(state.StageExtract, operationResult{
+		assessment:              &assessment,
+		capabilitySchemaVersion: result.CapabilitySchemaVersion,
+		capabilities:            result.Capabilities,
+	})
 
 	fmt.Fprintln(a.stdout, "ALIH — CLICKUP RAW EXTRACTION")
 	fmt.Fprintf(a.stdout, "\nWorkspace: %s (ID: %s)\n", displayValue(workspace.Name), displayValue(workspace.ID))
@@ -734,9 +885,11 @@ func (a *App) runExtract(args []string) int {
 	return 0
 }
 
-func (a *App) failExtraction(session *snapshot.Session, reason error, headline string) int {
+func (a *App) failExtraction(recorder *operationState, session *snapshot.Session, reason error, headline string) int {
 	failedPath, preserveErr := session.Fail(reason)
+	recorder.fail(state.StageExtract, reason, failedPath)
 	fmt.Fprintln(a.stderr, headline)
+	a.writeErrorAssessment(a.stderr, reason)
 	fmt.Fprintln(a.stderr, "alih extract: extraction FAILED; no complete raw snapshot was produced")
 	if preserveErr != nil {
 		fmt.Fprintf(a.stderr, "alih extract: preserving failure accounting also failed: %v (staging: %s)\n", preserveErr, failedPath)
@@ -765,6 +918,7 @@ func (a *App) runScan(args []string) int {
 	flags.SetOutput(a.stderr)
 	flags.Usage = func() { fmt.Fprint(a.stdout, scanHelpText) }
 	workspaceID := flags.String("workspace-id", "", "ClickUp Workspace ID to scan")
+	asJSON := flags.Bool("json", false, "print the machine-readable scan result")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -787,18 +941,32 @@ func (a *App) runScan(args []string) int {
 	}
 	authentication, err := a.options.Authenticator.Authenticate(context.Background(), token)
 	if err != nil {
+		if *asJSON {
+			a.writeScanFailureJSON(err, token, nil)
+			return 1
+		}
 		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
+		a.writeErrorAssessment(a.stderr, err)
 		return 1
 	}
 	workspace, err := selectWorkspace(authentication.Workspaces, strings.TrimSpace(*workspaceID))
 	if err != nil {
+		if *asJSON {
+			a.writeScanFailureJSON(err, token, validAssessmentPointer(authentication.Assessment))
+			return 1
+		}
 		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
 		return 1
 	}
 
 	result, err := a.options.Scanner.Scan(context.Background(), token, workspace)
 	if err != nil {
+		if *asJSON {
+			a.writeScanFailureJSON(err, token, nil)
+			return 1
+		}
 		fmt.Fprintf(a.stderr, "alih scan: %s\n", safeError(err, token))
+		a.writeErrorAssessment(a.stderr, err)
 		fmt.Fprintln(a.stderr, "alih scan: inventory FAILED; ALIH cannot prove this source inventory is complete")
 		return 1
 	}
@@ -807,14 +975,109 @@ func (a *App) runScan(args []string) int {
 		return 1
 	}
 	if shouldSave {
-		if err := a.options.CredentialStore.Save(token); err != nil {
-			fmt.Fprintf(a.stderr, "alih scan: scan completed but verified credential could not be saved: %v\n", err)
-			return 1
+		if err := a.saveVerifiedCredential(token); err != nil {
+			fmt.Fprintf(a.stderr, "alih scan: the scan completed but the verified credential could not be saved: %v\n", err)
 		}
 	}
 
-	printScan(a.stdout, result)
+	if *asJSON {
+		if err := writeScanJSON(a.stdout, result); err != nil {
+			fmt.Fprintf(a.stderr, "alih scan: encode result: %v\n", err)
+			return 1
+		}
+	} else {
+		printScan(a.stdout, result)
+	}
 	return 0
+}
+
+type scanDocument struct {
+	SchemaVersion           int                              `json:"schema_version"`
+	Kind                    string                           `json:"kind"`
+	Status                  string                           `json:"status"`
+	Connector               string                           `json:"connector"`
+	Workspace               *connector.Workspace             `json:"workspace,omitempty"`
+	Inventory               *connector.Inventory             `json:"inventory,omitempty"`
+	CapabilitySchemaVersion int                              `json:"capability_schema_version,omitempty"`
+	Capabilities            []connector.Capability           `json:"capabilities,omitempty"`
+	OperationalAssessment   *connector.OperationalAssessment `json:"operational_assessment,omitempty"`
+	Error                   string                           `json:"error,omitempty"`
+}
+
+func writeScanJSON(output io.Writer, result connector.ScanResult) error {
+	assessment := validAssessmentPointer(result.Assessment)
+	if assessment == nil {
+		return errors.New("connector returned no valid operational assessment")
+	}
+	document := scanDocument{
+		SchemaVersion: 1, Kind: "connector_scan", Status: "COMPLETE", Connector: assessment.Health.Connector,
+		Workspace: &result.Workspace, Inventory: &result.Inventory,
+		CapabilitySchemaVersion: result.CapabilitySchemaVersion,
+		Capabilities:            connector.CanonicalCapabilities(result.CapabilitySchemaVersion, result.Capabilities),
+		OperationalAssessment:   assessment,
+	}
+	encoder := json.NewEncoder(output)
+	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(true)
+	return encoder.Encode(document)
+}
+
+// connectorName is the connector this build was wired with. It is empty only
+// when no connector is available, which no command that reports one reaches.
+func (a *App) connectorName() string {
+	if a.options.Scanner != nil {
+		return a.options.Scanner.Name()
+	}
+	if a.options.Authenticator != nil {
+		return a.options.Authenticator.Name()
+	}
+	return ""
+}
+
+func (a *App) writeScanFailureJSON(err error, secret string, fallback *connector.OperationalAssessment) {
+	assessment, ok := connector.AssessmentFromError(err, a.observedAt())
+	if !ok && fallback != nil {
+		assessment, ok = *fallback, true
+	}
+	// The connector comes from the wiring rather than a literal, so a failure
+	// document cannot attribute a run to a connector that did not produce it.
+	document := scanDocument{
+		SchemaVersion: 1, Kind: "connector_scan", Status: "FAILED",
+		Connector: a.connectorName(), Error: safeError(err, secret),
+	}
+	if ok {
+		document.OperationalAssessment = &assessment
+		// Typed assessments deliberately contain only bounded Alih-owned text;
+		// do not duplicate provider-controlled API messages into JSON.
+		document.Error = assessment.Health.Message
+	}
+	encoder := json.NewEncoder(a.stdout)
+	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(true)
+	if encodeErr := encoder.Encode(document); encodeErr != nil {
+		fmt.Fprintf(a.stderr, "alih scan: encode failure: %v\n", encodeErr)
+	}
+}
+
+func validAssessmentPointer(assessment connector.OperationalAssessment) *connector.OperationalAssessment {
+	if err := connector.ValidateOperationalAssessment(assessment); err != nil {
+		return nil
+	}
+	connector.CanonicalizeOperationalAssessment(&assessment)
+	return &assessment
+}
+
+func (a *App) observedAt() time.Time {
+	if a.options.Now != nil {
+		return a.options.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (a *App) writeErrorAssessment(output io.Writer, err error) {
+	if assessment, ok := connector.AssessmentFromError(err, a.observedAt()); ok {
+		_ = connector.WriteOperationalAssessmentText(output, assessment)
+	}
 }
 
 func selectWorkspace(workspaces []connector.Workspace, requestedID string) (connector.Workspace, error) {
@@ -844,20 +1107,35 @@ func printScan(output io.Writer, result connector.ScanResult) {
 	fmt.Fprintln(output, "ALIH — CLICKUP SCAN")
 	fmt.Fprintf(output, "\nWorkspace: %s (ID: %s)\n", displayValue(result.Workspace.Name), displayValue(result.Workspace.ID))
 	fmt.Fprintln(output, "Scope: data accessible to the authenticated user through ClickUp's official API.")
+	if connector.ValidateOperationalAssessment(result.Assessment) == nil {
+		fmt.Fprintln(output, "\nOperational assessment")
+		_ = connector.WriteOperationalAssessmentText(output, result.Assessment)
+	}
+	// The hierarchy is printed in the connector's own words, which arrive with
+	// the inventory rather than being known here.
 	fmt.Fprintln(output, "\nHierarchy")
-	fmt.Fprintf(output, "Spaces                 %d\n", inventory.Spaces)
-	fmt.Fprintf(output, "Folders                %d\n", inventory.Folders)
-	fmt.Fprintf(output, "Lists                  %d\n", inventory.Lists)
+	for _, kind := range sortedKinds(inventory.ContainerKinds) {
+		fmt.Fprintf(output, "%-22s %d\n", displayValue(titleCase(kind)), inventory.ContainerKinds[kind])
+	}
+	fmt.Fprintf(output, "%-22s %d\n", "Collections", inventory.Collections)
 	fmt.Fprintln(output, "\nContent")
-	fmt.Fprintf(output, "Tasks                  %d\n", inventory.Tasks)
-	fmt.Fprintf(output, "Subtasks               %d\n", inventory.Subtasks)
-	fmt.Fprintf(output, "Task comments          %d\n", inventory.Comments)
-	fmt.Fprintf(output, "Task attachments       %d\n", inventory.Attachments)
-	fmt.Fprintf(output, "Custom fields          %d\n", inventory.CustomFields)
-	fmt.Fprintf(output, "Task relationships     %d\n", inventory.Relationships)
+	for _, kind := range sortedKinds(inventory.RecordKinds) {
+		fmt.Fprintf(output, "%-22s %d\n", displayValue(titleCase(kind)), inventory.RecordKinds[kind])
+	}
+	fmt.Fprintf(output, "%-22s %d\n", "Records", inventory.Records)
+	fmt.Fprintf(output, "%-22s %d\n", "Comments", inventory.Comments)
+	fmt.Fprintf(output, "%-22s %d\n", "Attachments", inventory.Attachments)
+	fmt.Fprintf(output, "%-22s %d\n", "Custom fields", inventory.CustomFields)
+	fmt.Fprintf(output, "%-22s %d\n", "Relationships", inventory.Relationships)
 	fmt.Fprintln(output, "\nCapability")
 	for _, capability := range result.Capabilities {
-		fmt.Fprintf(output, "%-22s %-10s %s\n", displayValue(capability.Name), capability.State, displayValue(capability.Note))
+		if result.CapabilitySchemaVersion == connector.CapabilitySchemaVersion {
+			fmt.Fprintf(output, "%-22s %-10s required=%-8s availability=%-11s id=%s  %s\n",
+				displayValue(capability.Name), capability.State, capability.Requirement, capability.Availability,
+				capability.ID, displayValue(capability.Note))
+		} else {
+			fmt.Fprintf(output, "%-22s %-10s %s\n", displayValue(capability.Name), capability.State, displayValue(capability.Note))
+		}
 	}
 	fmt.Fprintln(output, "\nScan complete.")
 	fmt.Fprintln(output, "All supported M2 traversals and pagination completed without unresolved failures.")
@@ -880,7 +1158,7 @@ func (a *App) runAuth(args []string) int {
 		return 1
 	}
 
-	token, shouldSave, err := a.authenticationToken()
+	token, _, err := a.authenticationToken()
 	if err != nil {
 		fmt.Fprintf(a.stderr, "alih auth: %v\n", err)
 		return 1
@@ -892,8 +1170,12 @@ func (a *App) runAuth(args []string) int {
 		return 1
 	}
 
-	if shouldSave {
-		if err := a.options.CredentialStore.Save(token); err != nil {
+	// "alih auth" exists in order to save. Running it is itself the request, so
+	// it saves an environment credential regardless of the persistence setting
+	// that governs the incidental saving other commands do, and a failure to
+	// save is a failure of the command rather than a warning.
+	if a.options.EnvironmentTokenSet {
+		if err := a.saveVerifiedCredential(token); err != nil {
 			fmt.Fprintf(a.stderr, "alih auth: credential verified but could not be saved: %v\n", err)
 			return 1
 		}
@@ -926,12 +1208,23 @@ func (a *App) runAuth(args []string) int {
 	return 0
 }
 
+// saveVerifiedCredential writes a credential that has just been verified. It is
+// one seam so every caller agrees on what saving means; whether a failure to
+// save is fatal is each command's own decision, because only "alih auth" exists
+// in order to save.
+func (a *App) saveVerifiedCredential(token string) error {
+	if a.options.CredentialStore == nil {
+		return errors.New("no credential store is available")
+	}
+	return a.options.CredentialStore.Save(token)
+}
+
 func (a *App) authenticationToken() (token string, shouldSave bool, err error) {
 	if a.options.EnvironmentTokenSet {
 		if err := credentials.ValidateToken(a.options.EnvironmentToken); err != nil {
 			return "", false, err
 		}
-		return a.options.EnvironmentToken, true, nil
+		return a.options.EnvironmentToken, a.options.SaveEnvironmentCredential, nil
 	}
 
 	token, err = a.options.CredentialStore.Load()
@@ -942,6 +1235,31 @@ func (a *App) authenticationToken() (token string, shouldSave bool, err error) {
 		return "", false, fmt.Errorf("load credential: %w", err)
 	}
 	return token, false, nil
+}
+
+// sortedKinds orders a connector's own vocabulary so that scan output is
+// stable without Core knowing any of the names.
+func sortedKinds(counts map[string]int) []string {
+	kinds := make([]string, 0, len(counts))
+	for kind := range counts {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	return kinds
+}
+
+// titleCase presents a connector's kind name as a column heading. It is
+// presentation only; the stored vocabulary is never altered.
+func titleCase(value string) string {
+	runes := []rune(value)
+	if len(runes) == 0 {
+		return value
+	}
+	upper := []rune(strings.ToUpper(string(runes[0])))
+	if len(upper) > 0 {
+		runes[0] = upper[0]
+	}
+	return string(runes) + "s"
 }
 
 func displayValue(value string) string {

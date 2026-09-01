@@ -1,0 +1,847 @@
+{
+  "schema_version": 1,
+  "format": "alih-portable-sqlite",
+  "database": "alih.db",
+  "tables": [
+    {
+      "name": "archive_metadata",
+      "description": "Archive-level values used by future independent verification.",
+      "columns": [
+        {
+          "name": "key",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Stable metadata key."
+        },
+        {
+          "name": "value",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Metadata value."
+        }
+      ]
+    },
+    {
+      "name": "workspaces",
+      "description": "Portable workspace roots.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed workspace name."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "containers",
+      "description": "Source-agnostic hierarchy containers such as spaces and folders.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "kind",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable container kind."
+        },
+        {
+          "name": "workspace_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable workspace ID."
+        },
+        {
+          "name": "parent_id",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Parent portable container ID."
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed container name."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "collections",
+      "description": "Portable collections containing records.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "workspace_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable workspace ID."
+        },
+        {
+          "name": "container_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Parent portable container ID."
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed collection name."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "records",
+      "description": "Portable records and nested records.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "kind",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "record or nested-record classification."
+        },
+        {
+          "name": "workspace_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable workspace ID."
+        },
+        {
+          "name": "collection_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable collection ID."
+        },
+        {
+          "name": "parent_record_id",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Parent portable record ID."
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed title."
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed source description."
+        },
+        {
+          "name": "text_content",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed plain-text content."
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed status name."
+        },
+        {
+          "name": "status_type",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed status category."
+        },
+        {
+          "name": "priority",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed priority."
+        },
+        {
+          "name": "archived",
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Observed archived flag."
+        },
+        {
+          "name": "date_created_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "date_updated_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "date_closed_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "date_done_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "start_date_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "due_date_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "time_estimate_ms",
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Observed time estimate in milliseconds."
+        },
+        {
+          "name": "time_spent_ms",
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Observed time spent in milliseconds."
+        },
+        {
+          "name": "points",
+          "type": "REAL",
+          "nullable": true,
+          "description": "Observed points value."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "identities",
+      "description": "Portable identities observed on supported records and comments.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "username",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed display name."
+        },
+        {
+          "name": "email",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed email when supplied by the API."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "record_identities",
+      "description": "Ordered roles connecting identities to records.",
+      "columns": [
+        {
+          "name": "record_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable record ID."
+        },
+        {
+          "name": "identity_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable identity ID."
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Observed role such as creator, assignee, or watcher."
+        },
+        {
+          "name": "position",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "Stable observed array position."
+        }
+      ]
+    },
+    {
+      "name": "record_tags",
+      "description": "Ordered tags observed on records.",
+      "columns": [
+        {
+          "name": "record_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable record ID."
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Observed tag name."
+        },
+        {
+          "name": "position",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "Stable observed array position."
+        }
+      ]
+    },
+    {
+      "name": "comments",
+      "description": "Portable record comments and threaded replies.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "workspace_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable workspace ID."
+        },
+        {
+          "name": "record_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable record ID."
+        },
+        {
+          "name": "parent_comment_id",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Parent portable comment for a threaded reply."
+        },
+        {
+          "name": "author_identity_id",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed author identity."
+        },
+        {
+          "name": "body_text",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Best direct text projection without invented formatting."
+        },
+        {
+          "name": "body_json",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Canonical observed structured comment body."
+        },
+        {
+          "name": "date_created_source",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Unmodified source timestamp value."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "field_definitions",
+      "description": "Portable field definitions with source definition evidence.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed field name."
+        },
+        {
+          "name": "field_type",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed source field type."
+        },
+        {
+          "name": "semantics_state",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Whether only observed/source definition semantics are preserved."
+        },
+        {
+          "name": "definition_json",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Canonical source definition JSON."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "record_field_values",
+      "description": "Observed values without executable computed-field claims.",
+      "columns": [
+        {
+          "name": "record_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable record ID."
+        },
+        {
+          "name": "field_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable field definition ID."
+        },
+        {
+          "name": "observed_value_json",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Canonical observed JSON value, including explicit null."
+        },
+        {
+          "name": "semantics_state",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Always OBSERVED_ONLY in M4."
+        }
+      ]
+    },
+    {
+      "name": "relationships",
+      "description": "Portable directed or undirected record relationships.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "kind",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Portable relationship kind."
+        },
+        {
+          "name": "from_record_id",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Resolved portable source endpoint."
+        },
+        {
+          "name": "to_record_id",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Resolved portable target endpoint."
+        },
+        {
+          "name": "from_source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source endpoint ID."
+        },
+        {
+          "name": "to_source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source endpoint ID."
+        },
+        {
+          "name": "resolution_state",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "RESOLVED or explicit partial external state."
+        },
+        {
+          "name": "source_metadata_json",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Canonical observed relationship metadata."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    },
+    {
+      "name": "attachments",
+      "description": "Expected attachment metadata and binary retrieval outcomes.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Deterministic portable ID."
+        },
+        {
+          "name": "workspace_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable workspace ID."
+        },
+        {
+          "name": "record_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Owning portable record ID."
+        },
+        {
+          "name": "filename",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Original observed filename."
+        },
+        {
+          "name": "media_type",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Observed media type."
+        },
+        {
+          "name": "expected_size",
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Observed expected byte size."
+        },
+        {
+          "name": "source_url",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Source URL with query and fragment removed."
+        },
+        {
+          "name": "download_status",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "RETRIEVED or UNRESOLVED."
+        },
+        {
+          "name": "local_path",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Archive-relative binary path."
+        },
+        {
+          "name": "archived_size",
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Retrieved byte size."
+        },
+        {
+          "name": "checksum",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "SHA-256 of retrieved binary."
+        },
+        {
+          "name": "error",
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Sanitized explicit unresolved reason."
+        },
+        {
+          "name": "source_provider",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source provider."
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source object type."
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Original source identifier."
+        },
+        {
+          "name": "source_raw_path",
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Archive-relative immutable raw evidence path."
+        },
+        {
+          "name": "source_id_composite",
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "1 only when the API exposes no relationship object ID."
+        }
+      ]
+    }
+  ],
+  "semantics": [
+    "All portable IDs are deterministic mappings; original source IDs remain in source_id columns.",
+    "Null means the source did not provide a usable value; Alih does not invent replacements.",
+    "Custom Field observed values are data, not executable source semantics.",
+    "M4 creation does not imply M5 verification."
+  ]
+}

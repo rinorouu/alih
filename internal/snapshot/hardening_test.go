@@ -46,7 +46,14 @@ func completeSnapshot(t *testing.T) string {
 		}
 	}
 	if _, err := session.Complete(connector.ExtractionResult{
-		ScanResult:    connector.ScanResult{Workspace: workspace},
+		ScanResult: connector.ScanResult{
+			Workspace: workspace, CapabilitySchemaVersion: connector.CapabilitySchemaVersion,
+			Capabilities: []connector.Capability{{
+				ID: connector.CapabilityItems, Name: "Items", Requirement: connector.CapabilityRequired,
+				Implementation: connector.CapabilitySupported, Availability: connector.CapabilityAvailabilityAvailable,
+				State: connector.CapabilitySupported, Note: "hardening fixture",
+			}},
+		},
 		SourceObjects: []connector.SourceObject{{Type: "workspace", ID: "w1"}},
 	}); err != nil {
 		t.Fatal(err)
@@ -107,9 +114,15 @@ func TestLoadCompleteRejectsDamagedRawEvidence(t *testing.T) {
 		}, "inconsistent"},
 		{"counts altered without the digest", func(t *testing.T, root string) {
 			rewriteJSON(t, filepath.Join(root, "inventory.json"), func(d map[string]any) {
-				d["counts"].(map[string]any)["tasks"] = float64(99)
+				d["counts"].(map[string]any)["records"] = float64(99)
 			})
 		}, "digest mismatch"},
+		{"capability altered without the digest", func(t *testing.T, root string) {
+			rewriteJSON(t, filepath.Join(root, "inventory.json"), func(d map[string]any) {
+				capabilities := d["capabilities"].([]any)
+				capabilities[0].(map[string]any)["note"] = "changed but valid note"
+			})
+		}, "capability contract digest mismatch"},
 		{"source objects altered without the digest", func(t *testing.T, root string) {
 			rewriteJSON(t, filepath.Join(root, "inventory.json"), func(d map[string]any) {
 				d["source_objects"] = []any{map[string]any{"type": "workspace", "id": "forged"}}
@@ -185,6 +198,20 @@ func TestLoadCompleteRejectsDamagedRawEvidence(t *testing.T) {
 				t.Fatalf("error = %v, want it to mention %q", err, testCase.want)
 			}
 		})
+	}
+}
+
+func TestLoadCompleteIgnoresUnknownAdditiveCapabilityFields(t *testing.T) {
+	t.Parallel()
+
+	root := completeSnapshot(t)
+	rewriteJSON(t, filepath.Join(root, "inventory.json"), func(document map[string]any) {
+		document["future_capability_envelope"] = map[string]any{"version": float64(2)}
+		capabilities := document["capabilities"].([]any)
+		capabilities[0].(map[string]any)["future_field"] = map[string]any{"nested": []any{float64(1)}}
+	})
+	if _, err := LoadComplete(root); err != nil {
+		t.Fatalf("unknown additive capability fields broke the current reader: %v", err)
 	}
 }
 

@@ -1,0 +1,98 @@
+[
+  {
+    "sequence": 1,
+    "operation": "list Spaces",
+    "method": "GET",
+    "path": "/team/w1/space",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000001.json",
+    "bytes": 39,
+    "sha256": "sha256:faac909dcd33cc7b19151fd2ef3dadf32b946349b9a589b72ba03dd3c39f52b1"
+  },
+  {
+    "sequence": 2,
+    "operation": "list folderless Lists",
+    "method": "GET",
+    "path": "/space/s1/list",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000002.json",
+    "bytes": 37,
+    "sha256": "sha256:32ce990934f0353415a7045cee48761552f0a20b651fd7647445615198124f01"
+  },
+  {
+    "sequence": 3,
+    "operation": "list Custom Fields",
+    "method": "GET",
+    "path": "/list/l1/field",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000003.json",
+    "bytes": 181,
+    "sha256": "sha256:7cc152c8eed7b9c7196c6563f68d2ac20e0abbc8ef7e555e7661e15a4c07af81"
+  },
+  {
+    "sequence": 4,
+    "operation": "get Task inventory details",
+    "method": "GET",
+    "path": "/task/t1",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000004.json",
+    "bytes": 615,
+    "sha256": "sha256:61ed4e247852a2b4a13333016a5caef67ae8aa183100b8cea9412e2fc6a90c92"
+  },
+  {
+    "sequence": 5,
+    "operation": "get Task inventory details",
+    "method": "GET",
+    "path": "/task/t2",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000005.json",
+    "bytes": 100,
+    "sha256": "sha256:664b2ac2c16f91cb0b66f5f22e1264d089c0baf9c375b92ebefcf181a30aa8e0"
+  },
+  {
+    "sequence": 6,
+    "operation": "get Task inventory details",
+    "method": "GET",
+    "path": "/task/t3",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000006.json",
+    "bytes": 102,
+    "sha256": "sha256:deb737e8e570c2c979606b59f18a74a6225c047565f21ddea150412737df7589"
+  },
+  {
+    "sequence": 7,
+    "operation": "list Task comments",
+    "method": "GET",
+    "path": "/task/t1/comment",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000007.json",
+    "bytes": 166,
+    "sha256": "sha256:d056751b25163dee73bd55fc4634ee0d80d80fe8fba9944b3741494e6dbf64fa"
+  },
+  {
+    "sequence": 8,
+    "operation": "list threaded comment replies",
+    "method": "GET",
+    "path": "/comment/c1/reply",
+    "attempt": 1,
+    "status_code": 200,
+    "outcome": "SUCCESS",
+    "raw_path": "raw/000008.json",
+    "bytes": 137,
+    "sha256": "sha256:0cc512edb756d6573ba58182c0b251ecd37e5811d3b491b6e112b50040c91cd6"
+  }
+]

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -130,10 +131,10 @@ func TestScanHandlesLargePaginatedWorkspace(t *testing.T) {
 	}
 	elapsed := time.Since(started)
 
-	if result.Inventory.Tasks != total/2 || result.Inventory.Subtasks != total/2 {
-		t.Fatalf("inventory tasks=%d subtasks=%d, want %d each", result.Inventory.Tasks, result.Inventory.Subtasks, total/2)
+	if result.Inventory.RecordKinds["task"] != total/2 || result.Inventory.RecordKinds["subtask"] != total/2 {
+		t.Fatalf("inventory tasks=%d subtasks=%d, want %d each", result.Inventory.RecordKinds["task"], result.Inventory.RecordKinds["subtask"], total/2)
 	}
-	if result.Inventory.Lists != 1 || result.Inventory.Spaces != 1 {
+	if result.Inventory.Collections != 1 || result.Inventory.ContainerKinds["space"] != 1 {
 		t.Fatalf("hierarchy inventory = %#v", result.Inventory)
 	}
 	// The traversal costs one detail request and one comment request per task,
@@ -174,7 +175,7 @@ func TestNormalizeLargeWorkspaceStaysLinear(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 30*time.Second {
 		t.Fatalf("normalizing a %d deep record chain took %s", total, elapsed)
 	}
-	if extraction.Inventory.Tasks != 1 || extraction.Inventory.Subtasks != total-1 {
+	if extraction.Inventory.RecordKinds["task"] != 1 || extraction.Inventory.RecordKinds["subtask"] != total-1 {
 		t.Fatalf("inventory = %#v", extraction.Inventory)
 	}
 	if len(extraction.SourceObjects) != total+3 {
@@ -377,7 +378,7 @@ func TestInterruptedExtractionReturnsNoInventory(t *testing.T) {
 	if err == nil {
 		t.Fatal("Extract() returned a result for an interrupted traversal")
 	}
-	if result.Inventory != (connector.Inventory{}) || len(result.SourceObjects) != 0 {
+	if !reflect.DeepEqual(result.Inventory, connector.Inventory{}) || len(result.SourceObjects) != 0 {
 		t.Fatalf("interrupted extraction leaked a partial inventory: %#v", result)
 	}
 	// A cancelled attempt must not be recorded as retryable work in progress.
@@ -428,7 +429,7 @@ func TestUnknownProviderFieldsDoNotBreakExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an unrecognised provider field broke extraction: %v", err)
 	}
-	if result.Inventory.Tasks == 0 || len(result.SourceObjects) == 0 {
+	if result.Inventory.RecordKinds["task"] == 0 || len(result.SourceObjects) == 0 {
 		t.Fatalf("inventory = %#v", result.Inventory)
 	}
 }

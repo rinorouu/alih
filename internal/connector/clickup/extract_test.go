@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"alih/internal/connector"
 )
@@ -47,6 +48,7 @@ func TestExtractRepeatedUnchangedSourceProducesEquivalentLogicalInventory(t *tes
 	for run := 0; run < 2; run++ {
 		fixture := &scanFixture{t: t, token: "extract-secret"}
 		client := fixtureClient(t, fixture.roundTrip)
+		client.now = func() time.Time { return time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC) }
 		evidence := &memoryEvidence{}
 		result, err := client.Extract(context.Background(), fixture.token, workspace, evidence)
 		if err != nil {
@@ -85,6 +87,14 @@ func TestExtractRepeatedUnchangedSourceProducesEquivalentLogicalInventory(t *tes
 	}
 	if len(wantObjects) != 0 {
 		t.Fatalf("source ID index omitted expected objects: %#v", wantObjects)
+	}
+	for _, capability := range results[0].Capabilities {
+		if capability.ID == connector.CapabilityRawEvidence && capability.Availability != connector.CapabilityAvailabilityAvailable {
+			t.Fatalf("completed extraction raw evidence availability = %s", capability.Availability)
+		}
+		if capability.ID == connector.CapabilityAttachmentContent && capability.Availability != connector.CapabilityAvailabilityUnknown {
+			t.Fatalf("extraction prematurely observed attachment content as %s", capability.Availability)
+		}
 	}
 }
 

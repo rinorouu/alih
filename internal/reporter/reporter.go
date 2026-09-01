@@ -25,26 +25,53 @@ import (
 	"time"
 
 	"alih/internal/archive"
+	"alih/internal/buildinfo"
 	"alih/internal/report"
 	"alih/internal/verify"
 )
-
-// alihVersion identifies the Alih build that produced the report.
-const alihVersion = "0.0.1"
 
 type archiveVerifier interface {
 	Verify(path string) (verify.Report, error)
 }
 
-// Service builds a recovery report for one archive.
-type Service struct {
-	verifier archiveVerifier
-	now      func() time.Time
+// ConnectorNamer supplies the human name of a connector this build ships. It
+// is the fallback for an archive sealed before the manifest recorded its own
+// display name; an archive that carries one always speaks for itself.
+type ConnectorNamer interface {
+	Connector() string
+	DisplayName() string
 }
 
-// New creates the M6 reporting service on top of the M5 verifier.
-func New(verifier archiveVerifier) *Service {
-	return &Service{verifier: verifier, now: func() time.Time { return time.Now().UTC() }}
+// Service builds a recovery report for one archive.
+type Service struct {
+	verifier    archiveVerifier
+	now         func() time.Time
+	alihVersion string
+	names       map[string]string
+}
+
+// New creates the M6 reporting service using the running build's identity.
+func New(verifier archiveVerifier, namers ...ConnectorNamer) *Service {
+	return NewWithVersion(verifier, "", namers...)
+}
+
+// NewWithVersion creates the service with an injected release identity, so the
+// version a report claims comes from the application entry point rather than
+// from a constant compiled into this package.
+func NewWithVersion(verifier archiveVerifier, alihVersion string, namers ...ConnectorNamer) *Service {
+	names := make(map[string]string, len(namers))
+	for _, namer := range namers {
+		if namer == nil {
+			continue
+		}
+		names[namer.Connector()] = namer.DisplayName()
+	}
+	return &Service{
+		verifier:    verifier,
+		now:         func() time.Time { return time.Now().UTC() },
+		alihVersion: buildinfo.Resolve(alihVersion),
+		names:       names,
+	}
 }
 
 // Name identifies this application service.
@@ -60,12 +87,13 @@ func (service *Service) Report(path string) (report.Document, error) {
 	}
 	manifest, manifestErr := readManifest(path)
 	inputs := report.Inputs{
-		ArchivePath:       verification.ArchivePath,
-		Manifest:          manifest,
-		ManifestAvailable: manifestErr == nil,
-		Verification:      verification,
-		GeneratedAt:       service.now(),
-		AlihVersion:       alihVersion,
+		ConnectorDisplayName: service.names[manifest.Connector],
+		ArchivePath:          verification.ArchivePath,
+		Manifest:             manifest,
+		ManifestAvailable:    manifestErr == nil,
+		Verification:         verification,
+		GeneratedAt:          service.now(),
+		AlihVersion:          service.alihVersion,
 	}
 	if inputs.ArchivePath == "" {
 		inputs.ArchivePath = path

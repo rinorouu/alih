@@ -25,6 +25,7 @@ import (
 	"alih/internal/credentials"
 	"alih/internal/exporter"
 	"alih/internal/logging"
+	"alih/internal/organize"
 	"alih/internal/reporter"
 	"alih/internal/verifier"
 )
@@ -42,18 +43,27 @@ func run(args []string) int {
 
 	logger := logging.New(os.Stderr, cfg.LogLevel)
 	clickUpClient := clickup.NewClient(nil)
-	archiveVerifier := verifier.New()
+	// The composition root is the one place that knows which connectors this
+	// build ships. Core coordinators receive the adapters rather than import
+	// them, so a second connector is added here and nowhere else.
+	archiveVerifier := verifier.New(clickup.FieldSemantics{})
+	// One release identity reaches every artifact this process writes.
+	version := buildinfo.Version
 	app := cli.New(os.Stdout, os.Stderr, logger, cli.Options{
 		Authenticator:       clickUpClient,
 		Scanner:             clickUpClient,
 		Extractor:           clickUpClient,
-		Exporter:            exporter.New(nil),
+		Exporter:            exporter.NewWithVersion(nil, version, clickup.Normalizer{}),
 		Verifier:            archiveVerifier,
-		Reporter:            reporter.New(archiveVerifier),
+		Reporter:            reporter.NewWithVersion(archiveVerifier, version, clickup.Normalizer{}),
+		Organizer:           organize.New(archiveVerifier, version),
 		CredentialStore:     credentials.NewFileStore(""),
 		EnvironmentToken:    cfg.ClickUpToken,
 		EnvironmentTokenSet: cfg.ClickUpTokenSet,
-		Version:             buildinfo.Version,
+		// A credential injected per run stays where its owner put it when
+		// ALIH_SAVE_CREDENTIAL is off.
+		SaveEnvironmentCredential: cfg.SaveCredential,
+		Version:                   version,
 	})
 
 	return app.Run(args)

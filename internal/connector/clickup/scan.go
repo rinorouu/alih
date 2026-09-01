@@ -105,6 +105,14 @@ func (c *Client) Extract(ctx context.Context, credential string, workspace conne
 	if err != nil {
 		return connector.ExtractionResult{}, err
 	}
+	result.Capabilities, err = c.extractionCapabilities()
+	if err != nil {
+		return connector.ExtractionResult{}, responseError("describe extraction capabilities", err)
+	}
+	result.Assessment, err = connector.HealthyAssessment(c.Name(), connector.HealthBasisExtraction, c.now(), connector.AuthenticationAuthenticated, result.Capabilities)
+	if err != nil {
+		return connector.ExtractionResult{}, responseError("describe extraction health", err)
+	}
 	return connector.ExtractionResult{
 		ScanResult:    result,
 		SourceObjects: sourceObjects(workspace, state),
@@ -149,20 +157,38 @@ func (c *Client) scan(ctx context.Context, credential string, workspace connecto
 		}
 	}
 
+	capabilities, err := c.scanCapabilities()
+	if err != nil {
+		return connector.ScanResult{}, nil, responseError("describe scan capabilities", err)
+	}
 	result := connector.ScanResult{
 		Workspace: workspace,
+		// The totals are the vocabulary Core reconciles against; the kind maps
+		// carry ClickUp's own words, which Core stores without interpreting.
 		Inventory: connector.Inventory{
-			Spaces:        len(state.spaces),
-			Folders:       len(state.folders),
-			Lists:         len(state.lists),
-			Tasks:         tasks,
-			Subtasks:      subtasks,
+			Containers:    len(state.spaces) + len(state.folders),
+			Collections:   len(state.lists),
+			Records:       tasks + subtasks,
+			NestedRecords: subtasks,
 			Comments:      len(state.comments),
 			Attachments:   len(state.attachments),
 			CustomFields:  len(state.customFields),
 			Relationships: len(state.relationships),
+			ContainerKinds: map[string]int{
+				"space":  len(state.spaces),
+				"folder": len(state.folders),
+			},
+			RecordKinds: map[string]int{
+				"task":    tasks,
+				"subtask": subtasks,
+			},
 		},
-		Capabilities: m2Capabilities(),
+		CapabilitySchemaVersion: connector.CapabilitySchemaVersion,
+		Capabilities:            capabilities,
+	}
+	result.Assessment, err = connector.HealthyAssessment(c.Name(), connector.HealthBasisScan, c.now(), connector.AuthenticationAuthenticated, capabilities)
+	if err != nil {
+		return connector.ScanResult{}, nil, responseError("describe scan health", err)
 	}
 	return result, state, nil
 }
@@ -744,17 +770,4 @@ func sortedTaskIDs(records map[string]taskRecord) []string {
 	}
 	sort.Strings(ids)
 	return ids
-}
-
-func m2Capabilities() []connector.Capability {
-	return []connector.Capability{
-		{Name: "Tasks/subtasks", State: connector.CapabilitySupported, Note: "active, closed, and archived home-List tasks"},
-		{Name: "Task comments", State: connector.CapabilitySupported, Note: "paginated comments and threaded replies"},
-		{Name: "Task attachments", State: connector.CapabilitySupported, Note: "metadata inventory; downloads are outside M2"},
-		{Name: "Custom fields", State: connector.CapabilitySupported, Note: "accessible definitions across hierarchy levels"},
-		{Name: "Task relationships", State: connector.CapabilityPartial, Note: "dependencies and task links only"},
-		{Name: "Docs", State: connector.CapabilityPartial, Note: "official API exists; Docs are outside M2 inventory"},
-		{Name: "Whiteboards", State: connector.CapabilityUnknown, Note: "not established by M2"},
-		{Name: "Automations", State: connector.CapabilityUnknown, Note: "not established by M2"},
-	}
 }

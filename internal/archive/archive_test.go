@@ -15,6 +15,8 @@
 package archive
 
 import (
+	"alih/internal/buildinfo"
+	"alih/internal/sqliteutil"
 	"bytes"
 	"context"
 	"database/sql"
@@ -25,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,7 +68,7 @@ func archiveFixture(t *testing.T, downloadURL string, expectedSize int64) (snaps
 	evidence := snapshot.Evidence{
 		RootPath: root, Connector: "clickup", Workspace: workspaceSource,
 		FinishedAt: time.Date(2026, 8, 30, 1, 2, 3, 0, time.UTC), LogicalDigest: "sha256:logical",
-		Inventory:    connector.Inventory{Spaces: 1, Lists: 1, Tasks: 1, Attachments: 1},
+		Inventory:    connector.Inventory{Containers: 1, Collections: 1, Records: 1, Attachments: 1, ContainerKinds: map[string]int{"space": 1}, RecordKinds: map[string]int{"task": 1}},
 		Capabilities: []connector.Capability{{Name: "Task attachments", State: connector.CapabilitySupported, Note: "fixture"}},
 	}
 	workspaceID := model.PortableID("clickup", "workspace", "w1")
@@ -329,6 +332,100 @@ func TestBuildRefusesOutputInsideRawSnapshot(t *testing.T) {
 	}
 }
 
+func TestBuildRefinesAttachmentContentAvailability(t *testing.T) {
+	t.Parallel()
+
+	capability := connector.Capability{
+		ID: connector.CapabilityAttachmentContent, Name: "Attachment content",
+		Requirement: connector.CapabilityRequired, Implementation: connector.CapabilitySupported,
+		Availability: connector.CapabilityAvailabilityUnknown, State: connector.CapabilitySupported,
+		Note: "fixture attachment retrieval",
+	}
+	tests := []struct {
+		name         string
+		status       int
+		body         []byte
+		wantArchive  string
+		availability connector.CapabilityAvailability
+		wantHealth   connector.HealthState
+	}{
+		{"retrieved", http.StatusOK, []byte("portable attachment\n"), StatusCreatedUnverified, connector.CapabilityAvailabilityAvailable, connector.HealthHealthy},
+		{"unresolved", http.StatusNotFound, nil, StatusIncomplete, connector.CapabilityAvailabilityFailed, connector.HealthUnavailable},
+	}
+	for _, testCase := range tests {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			expectedSize := int64(len([]byte("portable attachment\n")))
+			evidence, portable := archiveFixture(t, "https://attachments.example/download", expectedSize)
+			evidence.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+			evidence.Capabilities = []connector.Capability{capability}
+			assessment, assessmentErr := connector.HealthyAssessment("clickup", connector.HealthBasisExtraction, time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC), connector.AuthenticationAuthenticated, nil)
+			if assessmentErr != nil {
+				t.Fatal(assessmentErr)
+			}
+			evidence.OperationalAssessment = &assessment
+			var err error
+			evidence.CapabilityDigest, err = connector.CapabilityDigest(evidence.CapabilitySchemaVersion, evidence.Connector, evidence.Capabilities)
+			if err != nil {
+				t.Fatal(err)
+			}
+			portable.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+			portable.Capabilities = []connector.Capability{capability}
+			target := filepath.Join(t.TempDir(), "archive")
+			summary, err := Build(context.Background(), evidence, portable, target, Options{
+				HTTPClient: attachmentHTTPClient(testCase.status, testCase.body, nil),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if summary.Status != testCase.wantArchive {
+				t.Fatalf("archive status = %s, want %s", summary.Status, testCase.wantArchive)
+			}
+			var manifest Manifest
+			readJSON(t, filepath.Join(target, "manifest.json"), &manifest)
+			if manifest.CapabilitySchemaVersion != connector.CapabilitySchemaVersion || len(manifest.Capabilities) != 1 {
+				t.Fatalf("manifest capability contract = v%d %#v", manifest.CapabilitySchemaVersion, manifest.Capabilities)
+			}
+			if manifest.Capabilities[0].Availability != testCase.availability || manifest.Capabilities[0].Implementation != connector.CapabilitySupported {
+				t.Fatalf("manifest attachment capability = %#v", manifest.Capabilities[0])
+			}
+			if manifest.OperationalAssessment == nil || summary.OperationalAssessment == nil || manifest.OperationalAssessment.Health.State != testCase.wantHealth {
+				t.Fatalf("manifest operational assessment = %#v", manifest.OperationalAssessment)
+			}
+			if manifest.OperationalAssessment.Health.Basis != connector.HealthBasisBackup || len(manifest.OperationalAssessment.Health.Capabilities) != 1 || manifest.OperationalAssessment.Health.Capabilities[0].ID != connector.CapabilityAttachmentContent {
+				t.Fatalf("attachment health was not precisely scoped: %#v", manifest.OperationalAssessment)
+			}
+		})
+	}
+}
+
+func TestBuildRejectsChangedVersionedCapabilityContract(t *testing.T) {
+	t.Parallel()
+
+	evidence, portable := archiveFixture(t, "https://attachments.example/download", int64(len("portable attachment\n")))
+	capability := connector.Capability{
+		ID: connector.CapabilityAttachmentContent, Name: "Attachment content",
+		Requirement: connector.CapabilityRequired, Implementation: connector.CapabilitySupported,
+		Availability: connector.CapabilityAvailabilityUnknown, State: connector.CapabilitySupported,
+		Note: "raw snapshot declaration",
+	}
+	evidence.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+	evidence.Capabilities = []connector.Capability{capability}
+	var err error
+	evidence.CapabilityDigest, err = connector.CapabilityDigest(evidence.CapabilitySchemaVersion, evidence.Connector, evidence.Capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable.CapabilitySchemaVersion = connector.CapabilitySchemaVersion
+	portable.Capabilities = []connector.Capability{capability}
+	portable.Capabilities[0].Note = "changed portable declaration"
+	target := filepath.Join(t.TempDir(), "archive")
+	if _, err := Build(context.Background(), evidence, portable, target, Options{}); err == nil || !strings.Contains(err.Error(), "does not match raw snapshot") {
+		t.Fatalf("Build changed-contract error = %v", err)
+	}
+}
+
 func readJSON(t *testing.T, path string, destination any) {
 	t.Helper()
 	content, err := os.ReadFile(path)
@@ -337,5 +434,75 @@ func readJSON(t *testing.T, path string, destination any) {
 	}
 	if err := json.Unmarshal(content, destination); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestArchiveRecordsTheInjectedReleaseInEveryProvenanceField(t *testing.T) {
+	t.Parallel()
+	const release = "7.7.7-injected"
+	evidence, portable := archiveFixture(t, "https://attachments.example/download?signature=private", 0)
+	target := filepath.Join(t.TempDir(), "alih-export")
+
+	summary, err := Build(context.Background(), evidence, portable, target, Options{
+		Credential: "clickup-token", AlihVersion: release,
+		Now: func() time.Time { return time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Path != target {
+		t.Fatalf("summary path = %q", summary.Path)
+	}
+
+	content, err := os.ReadFile(filepath.Join(target, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(content, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.AlihVersion != release {
+		t.Fatalf("manifest alih version = %q, want %q", manifest.AlihVersion, release)
+	}
+	if bytes.Contains(content, []byte("0.0.1")) {
+		t.Fatal("the manifest still records the hard-coded version")
+	}
+
+	database, err := sql.Open("sqlite3", sqliteutil.FileURI(filepath.Join(target, "alih.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var stored string
+	if err := database.QueryRow(`SELECT value FROM archive_metadata WHERE key = 'alih_version'`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != release {
+		t.Fatalf("archived database records alih version %q, want %q", stored, release)
+	}
+}
+
+func TestArchiveFallsBackToTheRunningBuildIdentity(t *testing.T) {
+	t.Parallel()
+	evidence, portable := archiveFixture(t, "https://attachments.example/download?signature=private", 0)
+	target := filepath.Join(t.TempDir(), "alih-export")
+
+	if _, err := Build(context.Background(), evidence, portable, target, Options{
+		Credential: "clickup-token",
+		Now:        func() time.Time { return time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(target, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(content, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.AlihVersion != buildinfo.Resolve("") {
+		t.Fatalf("manifest alih version = %q, want the build identity %q", manifest.AlihVersion, buildinfo.Resolve(""))
 	}
 }
