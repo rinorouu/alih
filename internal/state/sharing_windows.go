@@ -16,6 +16,7 @@ package state
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"syscall"
 	"time"
@@ -30,8 +31,8 @@ import (
 // bounded: state must never block a backup, so after the budget is spent the
 // error is returned unchanged and the caller reports it as it always would.
 const (
-	sharingAttempts = 20
-	sharingBackoff  = 5 * time.Millisecond
+	sharingAttempts = 50
+	sharingBackoff  = 10 * time.Millisecond
 )
 
 // retryWhileShared runs an operation, retrying only the transient sharing
@@ -56,6 +57,27 @@ func isSharingViolation(err error) bool {
 	// ERROR_ACCESS_DENIED is what a denied replace reports; ERROR_SHARING_VIOLATION
 	// and ERROR_LOCK_VIOLATION are what a colliding open reports.
 	return errno == syscall.ERROR_ACCESS_DENIED || errno == syscall.Errno(32) || errno == syscall.Errno(33)
+}
+
+// retryWhileReplaced runs an open that may land in the instant a replacement is
+// swapping the name, when Windows reports the file as absent even though state
+// exists on both sides of that moment.
+//
+// Reporting "no operational state has been recorded" there would be a false
+// answer, which matters more than the few milliseconds this costs: the one
+// thing status must never do is claim nothing was recorded when something was.
+// The wait is bounded, and a genuinely absent file simply answers that much
+// later.
+func retryWhileReplaced(operation func() error) error {
+	var err error
+	for attempt := 0; attempt < sharingAttempts; attempt++ {
+		err = operation()
+		if err == nil || !(isSharingViolation(err) || errors.Is(err, fs.ErrNotExist)) {
+			return err
+		}
+		time.Sleep(sharingBackoff)
+	}
+	return err
 }
 
 // openForRead opens a state file for reading while explicitly permitting the

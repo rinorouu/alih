@@ -127,7 +127,15 @@ func (s *Store) loadPath(path string) (Record, error) {
 		}
 		return Record{}, err
 	}
-	info, err := os.Lstat(path)
+	// The stat is retried through the instant a replacement swaps the name,
+	// because a file that momentarily looks absent there is not the same thing
+	// as a scope nothing was ever recorded for. On POSIX this is a single call.
+	var info os.FileInfo
+	err := retryWhileReplaced(func() error {
+		var statErr error
+		info, statErr = os.Lstat(path)
+		return statErr
+	})
 	if errors.Is(err, fs.ErrNotExist) {
 		return Record{}, ErrNotRecorded
 	}
@@ -141,7 +149,7 @@ func (s *Store) loadPath(path string) (Record, error) {
 		return Record{}, fmt.Errorf("%w: permissions %04o are too broad; require 0600", ErrCorrupt, info.Mode().Perm())
 	}
 	var file *os.File
-	err = retryWhileShared(func() error {
+	err = retryWhileReplaced(func() error {
 		opened, openErr := openForRead(path)
 		if openErr != nil {
 			return openErr

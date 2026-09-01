@@ -26,3 +26,7 @@ func retryWhileShared(operation func() error) error { return operation() }
 // openForRead opens a state file for reading. POSIX places no restriction on
 // replacing a file that is open, so the standard call is enough.
 func openForRead(path string) (*os.File, error) { return os.Open(path) }
+
+// retryWhileReplaced runs an open once. A POSIX rename replaces the name
+// atomically, so there is no instant in which the file appears to be absent.
+func retryWhileReplaced(operation func() error) error { return operation() }
