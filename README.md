@@ -485,6 +485,10 @@ fixes can go straight to an issue or pull request; new features, new commands,
 and new connectors should start with an issue so the direction can be agreed
 before the code is written.
 
+Writing a connector is documented in [`docs/connectors.md`](docs/connectors.md):
+the contracts Alih Core requires, what stays provider-specific, and the
+conformance suite a connector is reviewed against.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the process, the principles a change
 must not break, and the checks CI runs.
 

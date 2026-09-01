@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"alih/internal/archive"
+	"alih/internal/config"
 	"alih/internal/connector"
 	"alih/internal/event"
 	"alih/internal/notify"
@@ -320,5 +321,58 @@ func TestProjectMemoryNamesEveryPackage(t *testing.T) {
 	}
 	if packages < 20 {
 		t.Fatalf("found only %d packages; the walk is not seeing the repository", packages)
+	}
+}
+
+// TestTheConnectorGuideStatesTheRealContracts holds docs/connectors.md to the
+// code it describes.
+//
+// The guide is the only thing an external connector author reads before they
+// start, so a stale fact in it costs somebody a day. Only facts are pinned --
+// the schema versions, the contract names the suite actually runs, and the
+// fail-closed credential rule. Wording is deliberately not pinned: a test that
+// breaks when a sentence is improved teaches people not to improve sentences.
+func TestTheConnectorGuideStatesTheRealContracts(t *testing.T) {
+	t.Parallel()
+
+	guide := readDocument(t, filepath.Join("docs", "connectors.md"))
+
+	// The archive compatibility a connector author plans against.
+	for _, claim := range []string{
+		fmt.Sprintf("manifest schema %d", archive.ArchiveSchemaVersion),
+		fmt.Sprintf("schema %d and %d", archive.MinReadableSchemaVersion, archive.ArchiveSchemaVersion),
+	} {
+		if !strings.Contains(guide, claim) {
+			t.Errorf("the connector guide does not state %q; archive compatibility is the first thing a connector author plans around", claim)
+		}
+	}
+
+	// Every contract Run executes must be named, so the guide cannot describe
+	// a suite that has grown or shrunk since it was written.
+	source, err := os.ReadFile(filepath.Join(repositoryRoot(t), "internal", "conformance", "suite.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contracts := regexp.MustCompile(`t\.Run\("([a-z_]+)"`).FindAllStringSubmatch(string(source), -1)
+	if len(contracts) == 0 {
+		t.Fatal("found no conformance contracts; the pattern no longer matches the suite")
+	}
+	for _, match := range contracts {
+		if !strings.Contains(guide, "`"+match[1]+"`") {
+			t.Errorf("the connector guide never mentions the %q contract, which conformance.Run executes", match[1])
+		}
+	}
+
+	// The rule most likely to be got wrong, and the most expensive to get wrong.
+	for _, rule := range []string{"fail-closed", "no wildcards", "CredentialHostProvider"} {
+		if !strings.Contains(guide, rule) {
+			t.Errorf("the connector guide does not state %q; a connector author who misses it ships a silent credential mistake", rule)
+		}
+	}
+
+	// Identity is the one string that must never drift.
+	if !strings.Contains(guide, "ALIH_CLICKUP_TOKEN") ||
+		!strings.Contains(guide, config.CredentialEnvironmentVariable("my-source")) {
+		t.Error("the connector guide does not show how the credential environment variable is derived from the connector name")
 	}
 }

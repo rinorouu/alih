@@ -24,6 +24,12 @@ cannot prove, and a change that is reasonable in isolation can quietly weaken
 one of those claims. Discussing the intent first avoids work being rejected
 after it is written.
 
+**Writing a connector?** [`docs/connectors.md`](docs/connectors.md) is the
+contract: what you must implement, what is optional, the invariants Alih Core
+owns, how credentials and attachment hosts work, and how to run the conformance
+suite your connector is reviewed against. Read it before you start, and still
+open an issue first — which providers Alih ships is a product decision.
+
 ## Principles a change must not break
 
 The README states Alih's principles. In practice, a pull request will be

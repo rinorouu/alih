@@ -204,6 +204,10 @@ breaks the build, which is intended.
   treatment.
 - **`MEMORY.md`** (this file) — its schema-version table is checked against the
   constants.
+- **`docs/connectors.md`** — the connector author guide. Its archive schema
+  versions, the conformance contract names, and the fail-closed credential rule
+  are checked against the code, so the guide cannot promise a contract that no
+  longer exists. Wording is deliberately not pinned.
 
 Milestone review notes live outside the repository as local developer state.
 Anything from them that is durable has been folded into the three documents
@@ -247,7 +251,9 @@ windows/amd64, darwin/amd64, darwin/arm64.
 
 ## Connector boundary
 
-What an adapter owns, and what Core refuses to know.
+What an adapter owns, and what Core refuses to know. The contributor-facing
+version of this, with the reasoning and the failure modes, is
+`docs/connectors.md`; keep the two consistent when either changes.
 
 - **Identity** is the adapter's `Name()`; `DisplayName()` is optional and falls
   back to the identifier. That one identifier scopes the credential, derives the
