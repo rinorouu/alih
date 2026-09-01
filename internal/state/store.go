@@ -140,7 +140,15 @@ func (s *Store) loadPath(path string) (Record, error) {
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return Record{}, fmt.Errorf("%w: permissions %04o are too broad; require 0600", ErrCorrupt, info.Mode().Perm())
 	}
-	file, err := os.Open(path)
+	var file *os.File
+	err = retryWhileShared(func() error {
+		opened, openErr := os.Open(path)
+		if openErr != nil {
+			return openErr
+		}
+		file = opened
+		return nil
+	})
 	if err != nil {
 		return Record{}, fmt.Errorf("open operational state: %w", err)
 	}
@@ -318,7 +326,7 @@ func (s *Store) writeAtomically(path string, content []byte) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("close state file: %w", err)
 	}
-	if err := s.fs.rename(temporaryPath, path); err != nil {
+	if err := retryWhileShared(func() error { return s.fs.rename(temporaryPath, path) }); err != nil {
 		return fmt.Errorf("commit state file: %w", err)
 	}
 	committed = true
