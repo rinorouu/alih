@@ -1,5 +1,10 @@
 # Alih
 
+[![CI](https://github.com/rinorouu/alih/actions/workflows/ci.yml/badge.svg)](https://github.com/rinorouu/alih/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/rinorouu/alih)](https://github.com/rinorouu/alih/releases/latest)
+[![License](https://img.shields.io/github/license/rinorouu/alih)](https://github.com/rinorouu/alih/blob/main/LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/rinorouu/alih)](https://github.com/rinorouu/alih/blob/main/go.mod)
+
 Alih is a free and open-source, local-first SaaS data portability tool. It is
 designed to answer a specific question:
 
