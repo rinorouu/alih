@@ -56,7 +56,7 @@ review it, and then run the local file.
 curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
 ```
 
-#### Windows
+### Windows
 
 Run in PowerShell:
 
