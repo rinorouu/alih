@@ -204,8 +204,9 @@ func TestSetupWillNotPromptWithoutATerminal(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("a non-interactive run recorded a mode nobody chose")
 	}
-	if !strings.Contains(stderr.String(), "--mode") {
-		t.Errorf("the error does not point at the unattended flag: %s", stderr)
+	want := "alih setup: a choice is required in non-interactive mode; use --mode self-managed or --mode assistance\n"
+	if got := stderr.String(); got != want {
+		t.Errorf("non-interactive guidance = %q, want %q", got, want)
 	}
 }
 

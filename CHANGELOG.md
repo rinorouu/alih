@@ -9,6 +9,19 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`alih setup` recognises native Windows console handles.** In 0.2.6 it answered "no
+  terminal is attached" in PowerShell and refused to prompt, so the primary
+  onboarding command was unusable on Windows unless `--mode` was given. Alih
+  excluded the null device by comparing file identity, and on Windows every
+  character device -- including the console -- reports the same empty identity
+  as `NUL`, so every console session looked like redirected input. Terminal
+  detection now asks the console itself through `GetConsoleMode` on Windows
+  and uses the terminal-control API on Unix. Redirected files, pipes, null and
+  other non-terminal character devices remain non-interactive, and `--mode`
+  is unchanged.
+
 ## [0.2.6] - 2026-09-02
 
 The second connector, and a name for how Alih is operated. Alih could already

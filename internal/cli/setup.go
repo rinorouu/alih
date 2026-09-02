@@ -102,9 +102,7 @@ func (a *App) runSetup(args []string) int {
 	}
 
 	if !a.interactive() {
-		fmt.Fprintln(a.stderr, "alih setup: no terminal is attached, so there is nobody to ask.")
-		fmt.Fprintln(a.stderr, "Use \"alih setup --mode self-managed\" or \"--mode assistance\" for an unattended install.")
-		fmt.Fprintln(a.stderr, "Alih works without setup: an installation with no recorded choice is self-managed.")
+		fmt.Fprintln(a.stderr, "alih setup: a choice is required in non-interactive mode; use --mode self-managed or --mode assistance")
 		return 2
 	}
 	return a.promptForMode(store, current)
@@ -223,6 +221,10 @@ func (a *App) printConnectorGuidance() {
 }
 
 // interactive reports whether a person is present to answer a question.
+//
+// Whether a stream is a terminal is a platform question, answered by
+// isTerminal in terminal_windows.go and terminal_other.go. Setup only decides
+// what to do with the answer.
 func (a *App) interactive() bool {
 	if a.options.Interactive != nil {
 		return *a.options.Interactive
@@ -231,19 +233,7 @@ func (a *App) interactive() bool {
 	if !ok {
 		return false
 	}
-	info, err := file.Stat()
-	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
-	// The null device is a character device too, and "alih setup < /dev/null"
-	// is how an unattended install runs. Calling that a terminal would print a
-	// menu nobody can answer, read the immediate EOF, and then exit 0 saying
-	// nothing was changed -- a success code for a mode that was never
-	// recorded. A pipe already refuses correctly; this makes the two agree.
-	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(info, null) {
-		return false
-	}
-	return true
+	return isTerminal(file)
 }
 
 func (a *App) stdin() io.Reader {

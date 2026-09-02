@@ -217,7 +217,7 @@ func TestNoCapabilityIsGatedBehindAnEdition(t *testing.T) {
 			}
 			constraint := strings.TrimSpace(strings.TrimPrefix(line, "//go:build"))
 			switch constraint {
-			case "windows", "!windows", "linux", "darwin", "unix", "!windows && !plan9":
+			case "windows", "!windows", "linux", "darwin", "linux || darwin", "unix", "!windows && !plan9":
 			default:
 				t.Errorf("%s carries the build constraint %q; only platform splits are expected",
 					filepath.ToSlash(relative), constraint)
