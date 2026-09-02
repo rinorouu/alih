@@ -50,34 +50,10 @@ The commands below execute the official installer delivered over HTTPS. To
 inspect it first, download the same `install.sh` or `install.ps1` URL to a file,
 review it, and then run the local file.
 
-### Linux
+### Linux/macOS/WSL
 
 ```bash
 curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
-```
-
-The default location is `~/.local/bin/alih`. If that directory is not already
-in `PATH`, the installer prints the directory and the exact binary path to use.
-
-### macOS
-
-```bash
-curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
-```
-
-The default location is `~/.local/bin/alih`. Both Intel and Apple Silicon are
-detected automatically.
-
-### Windows
-
-#### WSL — recommended if Smart App Control blocks the native executable
-
-WSL uses Alih's supported Linux build. From a WSL shell, install Alih and
-confirm the installation with:
-
-```bash
-curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
-~/.local/bin/alih --version
 ```
 
 #### Native Windows — available, but currently unsigned
