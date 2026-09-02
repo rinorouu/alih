@@ -32,13 +32,11 @@ import (
 func TestATerminalIsRecognisedAsOne(t *testing.T) {
 	t.Parallel()
 
-	// The master side of a pseudo-terminal is a character device that is not
-	// the null device: a real terminal, obtained without a helper library.
-	terminal, err := os.Open("/dev/ptmx")
-	if err != nil {
-		t.Skipf("no pseudo-terminal available on this machine: %v", err)
-	}
-	defer terminal.Close()
+	// Linux accepts its PTY master for a terminal-attribute query. Darwin
+	// requires the corresponding slave, which is the endpoint a command sees
+	// as stdin. The platform helper returns the endpoint appropriate to the
+	// detector instead of assuming both kernels treat /dev/ptmx identically.
+	terminal := openTestTerminal(t)
 
 	if !isTerminal(terminal) {
 		t.Error("a pseudo-terminal was not recognised as a terminal; setup would refuse to prompt a real user")
