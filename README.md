@@ -121,9 +121,25 @@ go build -o alih ./cmd/alih
 The primary Alpha workflow is:
 
 ```text
+alih setup
 alih auth
 alih backup
 ```
+
+`alih setup` asks how Alih is operated and points you at the rest. It is
+optional — an installation that never runs it is self-managed, and `alih auth`
+works on its own exactly as it always has.
+
+Alih ships two connectors. `--connector` selects one and defaults to `clickup`:
+
+```text
+alih --connector clickup backup
+alih --connector notion backup
+```
+
+Each connector has its own token, named after it: `ALIH_CLICKUP_TOKEN` and
+`ALIH_NOTION_TOKEN`. Notion is experimental — see
+[Connector support](docs/connectors.md) for what that means.
 
 For initial authentication, provide a ClickUp personal API token through the
 environment. Alih verifies and stores it locally for subsequent runs.

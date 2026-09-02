@@ -9,6 +9,33 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-09-02
+
+The second connector, and a name for how Alih is operated. Alih could already
+archive one SaaS; this release proves the architecture was not built around it.
+Notion goes through the same Core, the same archive format, and the same
+verification as ClickUp, with no provider-specific code in the middle. Alongside
+it, `alih setup` makes the question every user actually has — do I run this
+myself, or does somebody run it for me — something the program can answer.
+
+Alih remains free and open source. Self-managed is the default and is fully
+capable; Alih Assistance is an optional managed service, not a paid edition,
+and it is not available yet.
+
+### Compatibility
+
+- **No archive schema change.** This release writes and reads manifest schema 3
+  exactly as 0.2.5 did, and still reads schema 2 archives written by 0.2.4. An
+  archive made by 0.2.5 needs nothing.
+- **Existing installations are unaffected by `alih setup`.** An installation
+  that never runs it is self-managed, which is the behaviour every earlier
+  release already had. Setup is never a prerequisite for any command.
+- **`--connector` defaults to `clickup`**, so every documented ClickUp command
+  works unchanged.
+- **The credential file is upgraded only when a second connector is
+  configured.** A ClickUp-only installation keeps a file an earlier Alih can
+  read.
+
 ### Added
 
 - **`alih setup`**, for choosing how Alih is operated: self-managed, where you
@@ -52,6 +79,28 @@ compatibility, security, or release confidence.
   which meant any other connector silently received none. A connector now
   declares its own hosts and the default is to send the credential nowhere, so
   a pre-signed attachment URL cannot receive one by accident.
+
+### Contributor experience
+
+- **A connector conformance suite.** The contracts a connector must satisfy are
+  now executable and reusable rather than discoverable by failing verification.
+  Both shipped connectors run against it, and the suite is itself covered by
+  deliberately broken fixtures proving each contract fires.
+- **A connector author's guide**, `docs/connectors.md`, describing what an
+  adapter owns and what Core refuses to know, with its claims checked by tests
+  so it cannot drift away from the code.
+- **Connector support classification.** Every connector states who maintains it
+  and how mature it is, so `experimental` is a published fact rather than
+  something a user has to infer. Notion ships as `alih-maintainers` /
+  `experimental`.
+
+### Alih Assistance
+
+- Choosing Assistance in `alih setup` records local intent and nothing else. It
+  performs no network request, creates no account, collects no email or payment
+  details, and never claims a subscription is active — only a future Assistance
+  system could know that. The backend, activation and payment remain future
+  work, and are not presented as available.
 
 ## [0.2.5] - 2026-09-01
 
@@ -386,7 +435,8 @@ so no GitHub Release was published for this tag.
 - Backup orchestration through scan, extract, portable archive creation,
   independent verification, and Recovery Report generation.
 
-[Unreleased]: https://github.com/rinorouu/alih/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/rinorouu/alih/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/rinorouu/alih/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/rinorouu/alih/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/rinorouu/alih/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/rinorouu/alih/compare/v0.2.2...v0.2.3
