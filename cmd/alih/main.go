@@ -17,11 +17,15 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 
 	"alih/internal/buildinfo"
 	"alih/internal/cli"
 	"alih/internal/config"
+	"alih/internal/connector"
 	"alih/internal/connector/clickup"
+	"alih/internal/connector/notion"
 	"alih/internal/credentials"
 	"alih/internal/exporter"
 	"alih/internal/logging"
@@ -42,24 +46,36 @@ func run(args []string) int {
 	}
 
 	logger := logging.New(os.Stderr, cfg.LogLevel)
-	clickUpClient := clickup.NewClient(nil)
 	// The composition root is the one place that knows which connectors this
 	// build ships. Core coordinators receive the adapters rather than import
-	// them, so a second connector is added here and nowhere else.
-	archiveVerifier := verifier.New(clickup.FieldSemantics{})
+	// them, so a connector is added here and nowhere else.
+	// Which connector this invocation drives. Selection lives here rather than
+	// in Core: Core still receives exactly one source adapter and never learns
+	// that more than one exists.
+	selected, args, err := selectConnector(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "alih: %v\n", err)
+		return 2
+	}
+
+	// Every connector's interpreter and normalizer is registered regardless of
+	// which one is selected, so "alih verify" and "alih report" still read an
+	// archive produced by the other one.
+	archiveVerifier := verifier.New(clickup.FieldSemantics{}, notion.FieldSemantics{})
+	normalizers := []exporter.Normalizer{clickup.Normalizer{}, notion.Normalizer{}}
 	// One release identity reaches every artifact this process writes.
 	version := buildinfo.Version
-	// The credential is read from the variable the wired connector names, so
-	// adding a connector here brings its variable with it and Core never has to
-	// know that ClickUp's is ALIH_CLICKUP_TOKEN.
-	environmentToken, environmentTokenSet := config.CredentialFromEnvironment(clickUpClient.Name())
+	// The credential is read from the variable the selected connector names, so
+	// adding a connector brings its variable with it and Core never has to know
+	// that ClickUp's is ALIH_CLICKUP_TOKEN.
+	environmentToken, environmentTokenSet := config.CredentialFromEnvironment(selected.source.Name())
 	app := cli.New(os.Stdout, os.Stderr, logger, cli.Options{
-		Authenticator:       clickUpClient,
-		Scanner:             clickUpClient,
-		Extractor:           clickUpClient,
-		Exporter:            exporter.NewWithVersion(nil, version, clickup.Normalizer{}),
+		Authenticator:       selected.source,
+		Scanner:             selected.source,
+		Extractor:           selected.source,
+		Exporter:            exporter.NewWithVersion(nil, version, normalizers...),
 		Verifier:            archiveVerifier,
-		Reporter:            reporter.NewWithVersion(archiveVerifier, version, clickup.Normalizer{}),
+		Reporter:            reporter.NewWithVersion(archiveVerifier, version, clickup.Normalizer{}, notion.Normalizer{}),
 		Organizer:           organize.New(archiveVerifier, version),
 		CredentialStore:     credentials.NewFileStore(""),
 		EnvironmentToken:    environmentToken,
@@ -71,4 +87,57 @@ func run(args []string) int {
 	})
 
 	return app.Run(args)
+}
+
+// sourceConnector is one adapter this build can drive.
+type sourceConnector struct {
+	source interface {
+		connector.Authenticator
+		connector.Scanner
+		connector.Extractor
+	}
+}
+
+// selectConnector reads --connector, or ALIH_CONNECTOR, and returns the adapter
+// to drive along with the remaining arguments.
+//
+// The flag is parsed here rather than by any command, because the choice is
+// which adapter Core is handed, not an option Core interprets. It defaults to
+// ClickUp so every existing invocation keeps working unchanged.
+func selectConnector(args []string) (sourceConnector, []string, error) {
+	available := map[string]sourceConnector{
+		"clickup": {source: clickup.NewClient(nil)},
+		"notion":  {source: notion.NewClient(nil)},
+	}
+	names := make([]string, 0, len(available))
+	for name := range available {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	requested := strings.TrimSpace(os.Getenv("ALIH_CONNECTOR"))
+	remaining := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		switch {
+		case argument == "--connector":
+			if index+1 >= len(args) {
+				return sourceConnector{}, nil, fmt.Errorf("--connector requires a name; available: %s", strings.Join(names, ", "))
+			}
+			requested = strings.TrimSpace(args[index+1])
+			index++
+		case strings.HasPrefix(argument, "--connector="):
+			requested = strings.TrimSpace(strings.TrimPrefix(argument, "--connector="))
+		default:
+			remaining = append(remaining, argument)
+		}
+	}
+	if requested == "" {
+		requested = "clickup"
+	}
+	chosen, known := available[requested]
+	if !known {
+		return sourceConnector{}, nil, fmt.Errorf("unknown connector %q; available: %s", requested, strings.Join(names, ", "))
+	}
+	return chosen, remaining, nil
 }

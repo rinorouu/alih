@@ -5,9 +5,13 @@ about any provider: it does not know what your objects are called, which hosts
 you talk to, or what your errors mean. Everything provider-shaped lives in your
 adapter, and this document is the boundary between the two.
 
-ClickUp is currently the only connector and the reference implementation. It is
-in the repository under the same contracts described here, not under a special
-arrangement.
+ClickUp is the reference implementation and Notion is the second connector.
+Both are in the repository under the same contracts described here, not under a
+special arrangement. Where the two differ is instructive: ClickUp has a fixed
+space/folder/list hierarchy and declares one credential host, while Notion has
+databases holding data sources holding pages whose content is a block tree of
+unbounded depth, and declares no credential hosts at all. Neither shape is
+privileged by Core.
 
 **Before you start:** open an issue. Which providers Alih ships is a product
 decision, not only an engineering one, and the answer affects how much of this
@@ -394,15 +398,18 @@ your run publishes for it.
 
 Copy the **boundary pattern**, not the provider implementation.
 
-| Contract | ClickUp file |
-| --- | --- |
-| Identity, authentication, HTTP client, typed errors | `client.go` |
-| Inventory and extraction | `scan.go` |
-| Capability contract | `capabilities.go` |
-| Health mapping | `health.go` |
-| Normalization, display name, credential hosts | `portable.go` |
-| Field semantics | `fields.go` |
-| Conformance test | `conformance_test.go` |
+Two adapters exist, and reading both is more useful than reading either: what
+they share is the boundary, what differs is the provider.
+
+| Contract | ClickUp file | Notion file |
+| --- | --- | --- |
+| Identity, authentication, HTTP client, typed errors | `client.go` | `client.go` |
+| Inventory and extraction | `scan.go` | `scan.go` |
+| Capability contract | `capabilities.go` | `capabilities.go` |
+| Health mapping | `health.go` | `health.go` |
+| Normalization and display name | `portable.go` | `portable.go`, `rebuild.go` |
+| Field semantics | `fields.go` | `fields.go` |
+| Conformance test | `conformance_test.go` | `conformance_test.go` |
 
 Everything in that adapter that mentions ClickUp *should* mention ClickUp: the
 API base URL, the payload parsing, the words "space" and "task", the mapping
@@ -497,6 +504,7 @@ a claim of production hardening.
 | Connector | Maintenance | Maturity | Notes |
 | --- | --- | --- | --- |
 | `clickup` | `alih-maintainers` | `established` | The reference implementation. Ships in every release, passes the conformance suite in CI, and its archives are pinned by the frozen v0.2.4 compatibility corpus. |
+| `notion` | `alih-maintainers` | `experimental` | Read-only, and new. It covers databases, data sources, rows and the block tree; comments, files and page history are not implemented yet. Its archive shape may still change, so its output is not something Alih promises to keep stable. |
 
 ### What happens to a connector you contribute
 

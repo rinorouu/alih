@@ -48,19 +48,19 @@ import (
 )
 
 const helpText = `ALIH creates and verifies local, portable SaaS backups.
-ClickUp is currently supported through its official read-only API.
+Each supported SaaS is reached through its own official read-only API.
 
 Usage:
-  alih <command> [options]
+  alih [--connector NAME] <command> [options]
   alih --help
   alih --version
 
 Commands:
   version      Print the ALIH version
-  auth         Authenticate with ClickUp and list accessible Workspaces
-  backup       Create and verify a portable ClickUp backup
-  scan         Inventory one ClickUp Workspace without modifying it
-  extract      Save an M3 raw ClickUp API snapshot without creating an archive
+  auth         Authenticate with the selected source and list its Workspaces
+  backup       Create and verify a portable backup of one Workspace
+  scan         Inventory one Workspace without modifying it
+  extract      Save an M3 raw API snapshot without creating an archive
   export       Build an unverified M4 portable archive from an M3 snapshot
   verify       Independently verify an existing M4 portable archive
   report       Produce a human-readable recovery report for an archive
@@ -70,10 +70,16 @@ Commands:
   organize     Build a safe browsing view from a verified archive
 
 Get started:
-  1. Set ALIH_CLICKUP_TOKEN in your environment.
+  1. Set the token for the connector you are using, named after it:
+     ALIH_CLICKUP_TOKEN for ClickUp, ALIH_NOTION_TOKEN for Notion.
   2. Run "alih auth" to verify and save the credential locally.
   3. Optionally run "alih scan" to inspect the accessible Workspace.
   4. Run "alih backup" to create and verify a backup.
+
+Connectors:
+  --connector NAME   Choose the source. Defaults to clickup, so existing
+                     commands keep working unchanged. Credentials, backups
+                     and status are recorded separately per connector.
 
 Run "alih <command> --help" for command-specific options.
 

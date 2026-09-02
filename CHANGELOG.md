@@ -9,6 +9,19 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
+### Added
+
+- **A Notion connector**, read-only and experimental. It archives databases,
+  the data sources they contain, the pages in each data source, and the block
+  tree beneath every page to whatever depth Notion has. Select it with
+  `alih --connector notion`; `--connector` defaults to `clickup`, so every
+  existing command keeps working unchanged. Its credential is
+  `ALIH_NOTION_TOKEN`, derived from the connector name like every other.
+  Comments, files, page history and permissions are not implemented yet, and
+  the archive records what it could not establish rather than implying
+  completeness — including that a Notion integration only ever sees content
+  explicitly connected to it.
+
 ### Changed
 
 - Credentials are stored per connector. The credential file previously held one

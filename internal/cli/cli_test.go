@@ -184,13 +184,13 @@ func TestHelp(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"ALIH creates and verifies local, portable SaaS backups.",
-		"ClickUp is currently supported through its official read-only API.",
-		"Usage:\n  alih <command> [options]\n  alih --help\n  alih --version",
+		"Each supported SaaS is reached through its own official read-only API.",
+		"Usage:\n  alih [--connector NAME] <command> [options]\n  alih --help\n  alih --version",
 		"version      Print the ALIH version",
-		"auth         Authenticate with ClickUp and list accessible Workspaces",
-		"scan         Inventory one ClickUp Workspace without modifying it",
+		"auth         Authenticate with the selected source and list its Workspaces",
+		"scan         Inventory one Workspace without modifying it",
 		"Get started:",
-		"Set ALIH_CLICKUP_TOKEN in your environment",
+		"ALIH_CLICKUP_TOKEN for ClickUp, ALIH_NOTION_TOKEN for Notion",
 		"Run \"alih auth\"",
 		"Optionally run \"alih scan\"",
 		"Run \"alih backup\"",

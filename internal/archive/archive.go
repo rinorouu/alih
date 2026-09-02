@@ -478,7 +478,20 @@ func observeAttachmentCapability(portable *model.Archive) error {
 		}
 	}
 	if !found {
-		return errors.New("capability contract omits attachment content")
+		// A connector that archives no attachments need not declare the
+		// capability, and there is nothing to refine. Requiring the
+		// declaration unconditionally assumed every provider has attachment
+		// content, which was true only while one connector existed. Declaring
+		// it anyway would be worse: with no attachments attempted, the
+		// observation above would record AVAILABLE and claim a capability the
+		// run never exercised.
+		//
+		// Archiving attachments without declaring the capability is still a
+		// contract error, because then the observation has nowhere to go.
+		if len(portable.Attachments) == 0 {
+			return nil
+		}
+		return errors.New("capability contract omits attachment content while the archive contains attachments")
 	}
 	portable.Capabilities = connector.CanonicalCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities)
 	return connector.ValidateCapabilities(portable.CapabilitySchemaVersion, portable.Capabilities)

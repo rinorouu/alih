@@ -37,7 +37,8 @@ import (
 // and each is allowed for one stated reason.
 var networkCapablePackages = map[string]string{
 	"internal/connector":         "defines the source-neutral request and response types",
-	"internal/connector/clickup": "is the source connector; talking to the source is its purpose",
+	"internal/connector/clickup": "is a source connector; talking to its source is its purpose",
+	"internal/connector/notion":  "is a source connector; talking to its source is its purpose",
 	"internal/archive":           "downloads the attachments the archive is required to contain",
 	"internal/exporter":          "passes an HTTP client to the archive writer",
 	"internal/notify":            "delivers the webhook notifications a user explicitly configured",
@@ -127,6 +128,7 @@ func TestTheOnlyExternalHostIsTheSource(t *testing.T) {
 		"http://www.apache.org/licenses/LICENSE-2.0":            true,
 		"https://github.com/rinorouu/alih":                      true,
 		"https://api.clickup.com/api/v2":                        true,
+		"https://api.notion.com/v1":                             true,
 	}
 	pattern := regexp.MustCompile(`https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+`)
 

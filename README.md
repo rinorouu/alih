@@ -1,9 +1,11 @@
-# Alih
+<p align="center">
+  <a href="https://github.com/rinorouu/alih/actions/workflows/ci.yml"><img height="28" alt="CI" src="https://github.com/rinorouu/alih/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/rinorouu/alih/releases/latest"><img height="28" alt="Release" src="https://img.shields.io/github/v/release/rinorouu/alih?style=flat-square"></a>
+  <a href="https://github.com/rinorouu/alih/blob/main/LICENSE"><img height="28" alt="License" src="https://img.shields.io/github/license/rinorouu/alih?style=flat-square"></a>
+  <a href="https://github.com/rinorouu/alih/blob/main/go.mod"><img height="28" alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/rinorouu/alih?style=flat-square"></a>
+</p>
 
-[![CI](https://github.com/rinorouu/alih/actions/workflows/ci.yml/badge.svg)](https://github.com/rinorouu/alih/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/rinorouu/alih)](https://github.com/rinorouu/alih/releases/latest)
-[![License](https://img.shields.io/github/license/rinorouu/alih)](https://github.com/rinorouu/alih/blob/main/LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/rinorouu/alih)](https://github.com/rinorouu/alih/blob/main/go.mod)
+# Alih
 
 Alih is a free and open-source, local-first SaaS data portability tool. It is
 designed to answer a specific question:
@@ -16,8 +18,9 @@ builds a portable local representation, independently verifies the resulting
 archive, and reports what it can and cannot prove.
 
 **Status: Alpha.** Alih is early software and should be used alongside your
-existing backup and data-protection practices. ClickUp is the first and
-reference connector, but it is not part of Alih's core identity.
+existing backup and data-protection practices. ClickUp is the reference
+connector and Notion is supported experimentally; neither is part of Alih's
+core identity. Select one with `--connector`, which defaults to `clickup`.
 
 See [CHANGELOG.md](CHANGELOG.md) for tagged, released, and pending changes.
 
