@@ -30,6 +30,13 @@ owns, how credentials and attachment hosts work, and how to run the conformance
 suite your connector is reviewed against. Read it before you start, and still
 open an issue first — which providers Alih ships is a product decision.
 
+Merging a connector does not make the Alih maintainers responsible for it. Who
+maintains a connector, and how settled its output is, are agreed during review
+and recorded in that guide. Tell us in the pull request who intends to be the
+primary maintainer; a connector contributed from outside the project is
+normally merged as community-maintained and experimental. Neither is a
+judgement of quality, and neither limits what the connector may do.
+
 ## Principles a change must not break
 
 The README states Alih's principles. In practice, a pull request will be

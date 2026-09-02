@@ -435,14 +435,101 @@ Before opening a pull request:
 - [ ] No new dependency without discussion; Alih has one.
 - [ ] `gofmt`, `go vet ./...`, `go test ./...` and `go test -race ./...` pass.
 - [ ] A `CHANGELOG.md` entry under `[Unreleased]`.
-
-Connectors in this repository are reviewed against the contracts above. Whether
-Alih maintainers commit to maintaining any particular connector long term is a
-separate question the project has not yet answered.
+- [ ] You have said in the pull request who will be the connector's primary
+      maintainer, so its classification can be agreed during review — see
+      [Support and maintenance](#13-support-and-maintenance).
 
 ---
 
-## 13. What must never leak into Core
+## 13. Support and maintenance
+
+Being merged into this repository does not mean the Alih maintainers have
+promised to keep a connector working forever. This section says who is
+responsible for what, so nobody has to guess.
+
+### Three things people confuse
+
+They change independently, and none of them predicts the others.
+
+| | Question it answers | Where you find it | How fast it changes |
+| --- | --- | --- | --- |
+| **Conformance** | Does this connector satisfy Alih's contracts? | CI, every commit | per commit |
+| **Maintenance** | Who fixes it when the provider changes? | the table below | rarely |
+| **Runtime health** | Is it working right now, for you? | `alih status` | hour to hour |
+
+A connector maintained by the Alih maintainers can be `UNAVAILABLE` this
+morning because the provider is down. A community-maintained connector can be
+fully conformant and working perfectly. **Maintenance is not a quality score,
+and it is not a health signal.**
+
+Conformance is deliberately *not* recorded as a label. It is proven by tests
+that run on every commit; a stored "this connector is conformant" could only
+ever be right by accident, and would be wrong in the dangerous direction the
+moment a contract started failing.
+
+### Maintenance — who fixes it
+
+| State | Meaning |
+| --- | --- |
+| `alih-maintainers` | The Alih maintainers own this connector. If the provider changes its API and the connector breaks, fixing it is our problem. |
+| `community` | A named contributor is the primary maintainer. We review changes and keep it compiling and conformant in CI, but we do not promise to fix provider API changes ourselves. |
+
+Neither state is a promise of indefinite support. If a `community` connector
+loses its maintainer and starts failing, we will say so, look for a new
+maintainer, and — if none appears — mark it unmaintained or remove it in a
+release, with the removal in the changelog. A connector is never silently left
+broken.
+
+### Maturity — what changing it means
+
+| State | Meaning |
+| --- | --- |
+| `experimental` | Recently added. It may change shape or be removed. Breaking changes to its output are not treated as regressions. |
+| `established` | Shipped in releases and covered by the frozen compatibility corpus. Changes to what it produces are treated as regressions and need a migration path. |
+
+Maturity is about the commitment attached to a connector's output, not about
+popularity, and there is no score. Note that Alih itself is Alpha: an
+`established` connector is stable relative to this project's own maturity, not
+a claim of production hardening.
+
+### Connectors in this repository
+
+| Connector | Maintenance | Maturity | Notes |
+| --- | --- | --- | --- |
+| `clickup` | `alih-maintainers` | `established` | The reference implementation. Ships in every release, passes the conformance suite in CI, and its archives are pinned by the frozen v0.2.4 compatibility corpus. |
+
+### What happens to a connector you contribute
+
+```
+implementation -> your tests -> conformance passes -> review -> classification -> merge
+```
+
+Classification is agreed during review, not after. In practice a new connector
+from an external contributor is merged as `community` + `experimental`: you are
+the primary maintainer, and its output is not yet something Alih promises to
+keep stable.
+
+Either dimension can change later. A community connector can become
+`alih-maintainers` if the project decides to take it on. An `experimental`
+connector becomes `established` once it has shipped, its behaviour has settled,
+and its archives are covered by the compatibility corpus.
+
+**What merging does not mean:** that Alih maintainers become the primary
+maintainer, that the provider's API will keep working, that the connector will
+exist in future major versions, or that anyone is on call for it.
+
+**What it does mean:** the connector met the contracts in this document at
+review time, and CI keeps checking that it still does.
+
+Being the primary maintainer means being reachable on issues about your
+connector and reviewing changes to it. There is no rota, no SLA, and no
+paperwork. Classification never affects what a connector is allowed to do —
+Alih Core treats every connector identically, and there is no capability, flag,
+or limit tied to any of this.
+
+---
+
+## 14. What must never leak into Core
 
 If your work requires any of the following, the design is wrong and the answer
 is an issue rather than a patch:

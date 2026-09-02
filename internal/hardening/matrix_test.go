@@ -376,3 +376,85 @@ func TestTheConnectorGuideStatesTheRealContracts(t *testing.T) {
 		t.Error("the connector guide does not show how the credential environment variable is derived from the connector name")
 	}
 }
+
+// TestEveryConnectorDeclaresItsMaintenance keeps the support table in
+// docs/connectors.md true as connectors are added.
+//
+// Classification lives in documentation rather than in code on purpose: who
+// maintains a connector is project governance, it changes on a different clock
+// from the code, and encoding it in Go would mean a release to say that a
+// connector is no longer maintained. Documentation only works if it cannot
+// quietly omit a connector, which is what this test prevents.
+//
+// It pins facts, not wording: that every connector package has a row, that the
+// row uses a state the guide defines, and that the vocabulary has not drifted.
+func TestEveryConnectorDeclaresItsMaintenance(t *testing.T) {
+	t.Parallel()
+
+	guide := readDocument(t, filepath.Join("docs", "connectors.md"))
+
+	// The vocabulary the guide defines. A state used in the table but never
+	// defined, or defined but never usable, is drift either way.
+	maintenance := []string{"alih-maintainers", "community"}
+	maturity := []string{"experimental", "established"}
+	for _, state := range append(append([]string{}, maintenance...), maturity...) {
+		if !strings.Contains(guide, "`"+state+"`") {
+			t.Errorf("the guide does not define the %q state, but the classification model uses it", state)
+		}
+	}
+
+	// Every connector package in the tree must appear in the table with one
+	// maintenance state and one maturity state.
+	entries, err := os.ReadDir(filepath.Join(repositoryRoot(t), "internal", "connector"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var connectors int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		connectors++
+		name := entry.Name()
+		row := connectorRow(guide, name)
+		if row == "" {
+			t.Errorf("connector %q has no row in the support table in docs/connectors.md; "+
+				"a connector nobody is recorded as maintaining is exactly the ambiguity that table exists to remove", name)
+			continue
+		}
+		if !containsAnyState(row, maintenance) {
+			t.Errorf("connector %q does not declare who maintains it: %s", name, row)
+		}
+		if !containsAnyState(row, maturity) {
+			t.Errorf("connector %q does not declare its maturity: %s", name, row)
+		}
+	}
+	if connectors == 0 {
+		t.Fatal("found no connector packages; the walk is not seeing the repository")
+	}
+
+	// Classification must never become a capability gate. The guide says so,
+	// and Core must keep making it true.
+	if !strings.Contains(guide, "Alih Core treats every connector identically") {
+		t.Error("the guide no longer states that classification does not affect what a connector may do")
+	}
+}
+
+// connectorRow returns the support-table row naming connectorName, if any.
+func connectorRow(guide, connectorName string) string {
+	for _, line := range strings.Split(guide, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "| `"+connectorName+"`") {
+			return line
+		}
+	}
+	return ""
+}
+
+func containsAnyState(row string, states []string) bool {
+	for _, state := range states {
+		if strings.Contains(row, "`"+state+"`") {
+			return true
+		}
+	}
+	return false
+}
