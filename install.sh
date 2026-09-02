@@ -161,11 +161,11 @@ printf 'Alih %s installed successfully.\n' "${tag#v}"
 printf 'Installed to: %s\n' "$install_path"
 case ":${PATH:-}:" in
 	*":$install_directory:"*)
-		printf 'Next: alih --help\n'
+		printf '\nNext: run "alih setup" to choose how Alih is operated.\n'
 		;;
 	*)
 		printf 'The installation directory is not currently in PATH.\n'
 		printf 'Add this directory to PATH: %s\n' "$install_directory"
-		printf 'For now, run: %s --help\n' "$install_path"
+		printf '\nNext: run "%s setup" to choose how Alih is operated.\n' "$install_path"
 		;;
 esac

@@ -249,6 +249,22 @@ windows/amd64, darwin/amd64, darwin/arm64.
   `internal/compat` pins both ends of that range against the frozen v0.2.4
   corpus.
 
+## Usage mode — who operates an installation
+
+`internal/usage` records one thing: whether this installation is operated by
+the person who installed it (`self-managed`) or by Alih Assistance on their
+behalf (`assistance`). No recorded choice means self-managed, which is why every
+command works without `alih setup` ever having been run.
+
+**It is not an edition and never gates anything.** Alih is free and open source;
+Assistance is an optional service where somebody else operates the same binary.
+`internal/hardening.TestNoCapabilityCanDependOnHowAlihIsOperated` enforces this
+structurally: only `internal/cli`, `internal/usage` and `cmd/alih` may import
+the package, so `if mode == assistance { enable(...) }` cannot be written inside
+a capability without a test failing. There is deliberately no subscription
+state — only a future Assistance system could know that fact, and a local file
+is not evidence of it.
+
 ## Connector boundary
 
 What an adapter owns, and what Core refuses to know. The contributor-facing

@@ -70,14 +70,17 @@ func run(args []string) int {
 	// that ClickUp's is ALIH_CLICKUP_TOKEN.
 	environmentToken, environmentTokenSet := config.CredentialFromEnvironment(selected.source.Name())
 	app := cli.New(os.Stdout, os.Stderr, logger, cli.Options{
-		Authenticator:       selected.source,
-		Scanner:             selected.source,
-		Extractor:           selected.source,
-		Exporter:            exporter.NewWithVersion(nil, version, normalizers...),
-		Verifier:            archiveVerifier,
-		Reporter:            reporter.NewWithVersion(archiveVerifier, version, clickup.Normalizer{}, notion.Normalizer{}),
-		Organizer:           organize.New(archiveVerifier, version),
-		CredentialStore:     credentials.NewFileStore(""),
+		Authenticator:   selected.source,
+		Scanner:         selected.source,
+		Extractor:       selected.source,
+		Exporter:        exporter.NewWithVersion(nil, version, normalizers...),
+		Verifier:        archiveVerifier,
+		Reporter:        reporter.NewWithVersion(archiveVerifier, version, clickup.Normalizer{}, notion.Normalizer{}),
+		Organizer:       organize.New(archiveVerifier, version),
+		CredentialStore: credentials.NewFileStore(""),
+		// The composition root tells Core which connectors this build ships;
+		// Core never discovers them.
+		AvailableConnectors: []string{"clickup", "notion"},
 		EnvironmentToken:    environmentToken,
 		EnvironmentTokenSet: environmentTokenSet,
 		// A credential injected per run stays where its owner put it when

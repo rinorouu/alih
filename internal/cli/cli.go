@@ -57,6 +57,7 @@ Usage:
 
 Commands:
   version      Print the ALIH version
+  setup        Choose how Alih is operated and set up a connector
   auth         Authenticate with the selected source and list its Workspaces
   backup       Create and verify a portable backup of one Workspace
   scan         Inventory one Workspace without modifying it
@@ -70,6 +71,8 @@ Commands:
   organize     Build a safe browsing view from a verified archive
 
 Get started:
+  0. Run "alih setup" to choose how Alih is operated. Optional: an
+     installation that never runs setup is self-managed.
   1. Set the token for the connector you are using, named after it:
      ALIH_CLICKUP_TOKEN for ClickUp, ALIH_NOTION_TOKEN for Notion.
   2. Run "alih auth" to verify and save the credential locally.
@@ -269,13 +272,25 @@ type credentialStore interface {
 // Options contains the M1 authentication dependencies and the optional token
 // supplied by the process environment for initial setup.
 type Options struct {
-	Authenticator       connector.Authenticator
-	Scanner             connector.Scanner
-	Extractor           connector.Extractor
-	Exporter            archiveExporter
-	Verifier            archiveVerifier
-	Reporter            archiveReporter
-	CredentialStore     credentialStore
+	Authenticator   connector.Authenticator
+	Scanner         connector.Scanner
+	Extractor       connector.Extractor
+	Exporter        archiveExporter
+	Verifier        archiveVerifier
+	Reporter        archiveReporter
+	CredentialStore credentialStore
+	// UsageStatePath overrides where the chosen usage mode is recorded. It
+	// exists so tests do not touch a real user's configuration directory.
+	UsageStatePath string
+	// Stdin is where an interactive command reads an answer. Nil means the
+	// process's own standard input.
+	Stdin io.Reader
+	// Interactive overrides terminal detection. Nil means detect it, which is
+	// what a real run does; tests set it so they never depend on a TTY.
+	Interactive *bool
+	// AvailableConnectors are the connector names this build ships, supplied
+	// by the composition root. Core does not discover connectors; it is told.
+	AvailableConnectors []string
 	EnvironmentToken    string
 	EnvironmentTokenSet bool
 	// SaveEnvironmentCredential reports whether a credential taken from the
@@ -397,6 +412,9 @@ func (a *App) Run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "organize" {
 		return a.runOrganize(args[1:])
+	}
+	if len(args) > 0 && args[0] == "setup" {
+		return a.runSetup(args[1:])
 	}
 
 	flags := flag.NewFlagSet("alih", flag.ContinueOnError)
@@ -1307,4 +1325,30 @@ func (a *App) connectorDisplayName() string {
 		}
 	}
 	return a.connectorName()
+}
+
+// availableConnectors are the connector names this build ships, in a stable
+// order. It is what the composition root wired, never a discovered list.
+func (a *App) availableConnectors() []string {
+	if len(a.options.AvailableConnectors) > 0 {
+		names := append([]string(nil), a.options.AvailableConnectors...)
+		sort.Strings(names)
+		return names
+	}
+	if name := a.connectorName(); name != "" {
+		return []string{name}
+	}
+	return nil
+}
+
+// otherConnectors are the shipped connectors that are not the selected one.
+func (a *App) otherConnectors() []string {
+	selected := a.connectorName()
+	var others []string
+	for _, name := range a.availableConnectors() {
+		if name != selected {
+			others = append(others, name)
+		}
+	}
+	return others
 }

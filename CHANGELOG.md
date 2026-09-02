@@ -11,6 +11,17 @@ compatibility, security, or release confidence.
 
 ### Added
 
+- **`alih setup`**, for choosing how Alih is operated: self-managed, where you
+  configure and run it yourself, or Alih Assistance, an optional managed service
+  that is not available yet. Setup is safe to run repeatedly and you can move
+  between modes at any time; it never deletes archives, credentials, schedules
+  or notification settings. **You never have to run it** — an installation with
+  no recorded choice is self-managed, so upgrading changes nothing.
+  `--mode` records a choice unattended, and `--show` prints the current one.
+  Choosing Assistance contacts nobody and creates no account.
+  Alih remains free and open source: the mode records who operates an
+  installation, never what this build may do, and no capability can read it.
+
 - **A Notion connector**, read-only and experimental. It archives databases,
   the data sources they contain, the pages in each data source, and the block
   tree beneath every page to whatever depth Notion has. Select it with

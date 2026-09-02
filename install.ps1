@@ -127,10 +127,12 @@ function Install-Alih {
         Write-Host "Alih $($tag.Substring(1)) installed successfully."
         Write-Host "Installed to: $installPath"
         if ($pathContainsInstallDirectory) {
-            Write-Host "Next: alih --help"
+            Write-Host ""
+            Write-Host "Next: run 'alih setup' to choose how Alih is operated."
         } else {
             Write-Host "Add this directory to your user PATH: $normalizedInstallDirectory"
-            Write-Host "For now, run: & '$installPath' --help"
+            Write-Host ""
+            Write-Host "Next: run & '$installPath' setup to choose how Alih is operated."
         }
     } finally {
         if ($temporaryInstallPath -and (Test-Path -LiteralPath $temporaryInstallPath)) {

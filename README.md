@@ -439,12 +439,25 @@ production OAuth onboarding, or additional connectors.
 Alih is open-source software that users may build and run themselves. The
 current Alpha workflow does not require an Alih-hosted service.
 
-## Alih Assistance
+## How Alih is operated
 
-Users who prefer not to operate Alih themselves may be able to use paid Alih
-Assistance in the future, where the maintainers operate the same open-source
-software on their behalf. Assistance would be optional and would not restrict
-the self-run open-source core. No availability or pricing is promised here.
+Run `alih setup` to choose. It is safe to run again at any time, and you can
+move between the two freely without reinstalling or losing anything.
+
+**Self-managed — 100% free.** You configure and operate Alih yourself. This is
+the default: an installation that never runs `alih setup` is self-managed, and
+every command works without it.
+
+**Alih Assistance — an optional managed service.** Setup, scheduling and
+monitoring handled for you, running this same open-source build. **It is not
+available yet.** Choosing it today records that intent locally and contacts
+nobody — no account, no payment, nothing sent anywhere.
+
+Assistance is a service, not a paid edition. **Nobody pays to unlock a
+feature**, because nothing in Alih is locked: connectors, backup, verification,
+reports, the browsable view, scheduling and notifications all work identically
+however you answer. A test in `internal/hardening` enforces this by preventing
+any capability from even reading the usage mode.
 
 ## Development
 

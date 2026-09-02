@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // The claims these tests defend are the ones a person has no practical way to
@@ -199,8 +200,14 @@ func TestNoCapabilityIsGatedBehindAnEdition(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if match := gating.FindString(string(content)); match != "" {
-			t.Errorf("%s mentions %q; Alih ships one build with one set of capabilities",
+		// Comments are stripped before matching, as they are in
+		// TestCoreNamesNoProviderInItsCredentialPath. The rule is that no code
+		// implements gating; prose explaining why Alih has no subscription,
+		// no edition and no entitlement is the opposite of a violation, and a
+		// test that punished it would push those explanations out of the
+		// codebase. Every executable line is still matched.
+		if match := gating.FindString(codeWithoutComments(string(content))); match != "" {
+			t.Errorf("%s mentions %q in code; Alih ships one build with one set of capabilities",
 				filepath.ToSlash(relative), match)
 		}
 		// A build tag other than the platform splits could hide a private path.
@@ -244,4 +251,122 @@ func TestNoDependencyCanReportOnTheUser(t *testing.T) {
 			t.Errorf("go.mod requires %s, which is not in the reviewed dependency set", module)
 		}
 	}
+}
+
+// TestNoCapabilityCanDependOnHowAlihIsOperated is the product rule expressed as
+// architecture rather than as a promise.
+//
+// Alih is free and open source. Alih Assistance is an optional service where
+// somebody else operates the same binary; nobody pays to unlock a feature, and
+// there is no edition. The usage mode therefore answers only "who operates this
+// installation", and no capability may consult it.
+//
+// Keeping that honest by discipline would fail eventually, so it is kept
+// structurally: only the packages that let a person choose or see their mode
+// may import internal/usage. A future `if mode == assistance { enable(...) }`
+// inside backup, verify, organize, schedule, notify or any connector cannot be
+// written without this test failing first.
+func TestNoCapabilityCanDependOnHowAlihIsOperated(t *testing.T) {
+	t.Parallel()
+
+	// The only packages that may know a usage mode exists. cli owns the setup
+	// and status surfaces; cmd/alih wires them together.
+	allowed := map[string]bool{
+		"internal/cli":   true,
+		"internal/usage": true,
+		"cmd/alih":       true,
+	}
+	const usagePackage = "alih/internal/usage"
+
+	for name, parsed := range goPackages(t) {
+		if name == "." || allowed[name] {
+			continue
+		}
+		for _, imported := range parsed.Imports {
+			if imported == usagePackage {
+				t.Errorf("package %s imports %s. A capability must never depend on how Alih is "+
+					"operated: Assistance is a service, not an edition, and nothing here is gated behind it. "+
+					"If this import is genuinely about letting a person choose or see their mode, add the "+
+					"package to the allowed set deliberately.", name, usagePackage)
+			}
+		}
+	}
+}
+
+// TestTheUsageModelHasNoSubscriptionState proves Alih records an operating
+// preference and never pretends to know a commercial fact.
+//
+// Whether somebody has an Assistance subscription could only be known by a
+// future Assistance system. A local file that a user or a corrupted disk can
+// change is not evidence of it, and a state named ACTIVE or EXPIRED would
+// invite exactly the entitlement check the previous test forbids.
+func TestTheUsageModelHasNoSubscriptionState(t *testing.T) {
+	t.Parallel()
+
+	root := repositoryRoot(t)
+	entries, err := os.ReadDir(filepath.Join(root, "internal", "usage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := regexp.MustCompile(`(?i)\b(subscription|entitle|licen[cs]e[ _]?key|paid|premium|pro[ _]?tier|trial|expired|billing|payment|invoice)\b`)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		// Tests are excluded, as they are in
+		// TestNoCapabilityIsGatedBehindAnEdition. A test proving that
+		// "premium" is refused has to be able to write "premium", and the
+		// package's own tests are evidence for this rule rather than against
+		// it. Every line the package actually executes is still matched.
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(root, "internal", "usage", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Comments may explain why these concepts are absent; code may not
+		// introduce them.
+		if match := forbidden.FindString(codeWithoutComments(string(content))); match != "" {
+			t.Errorf("internal/usage/%s introduces %q. The usage model records who operates an "+
+				"installation, never a commercial state.", name, match)
+		}
+	}
+}
+
+// codeWithoutComments removes whole-line comments so a rule about what code
+// does is not triggered by prose describing what the code deliberately avoids,
+// then separates camelCase identifiers so the rules can actually see them.
+//
+// The separation is not cosmetic. Both callers match whole words, and Go names
+// things in camelCase, so "subscriptionActive", "requiresSubscription" and
+// "hasPremiumSubscription" contain no word boundary before or after the term
+// being looked for. Without this, the most natural way to write the very thing
+// these tests forbid is the one way they cannot see.
+func codeWithoutComments(content string) string {
+	var code strings.Builder
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		code.WriteString(separateCamelCase(line))
+		code.WriteString("\n")
+	}
+	return code.String()
+}
+
+// separateCamelCase inserts a space before each capital that follows a letter
+// or digit, so "isPaidTier" reads as "is Paid Tier" to a word-boundary match.
+func separateCamelCase(line string) string {
+	var separated strings.Builder
+	var previous rune
+	for _, current := range line {
+		if unicode.IsUpper(current) && (unicode.IsLower(previous) || unicode.IsDigit(previous)) {
+			separated.WriteRune(' ')
+		}
+		separated.WriteRune(current)
+		previous = current
+	}
+	return separated.String()
 }
