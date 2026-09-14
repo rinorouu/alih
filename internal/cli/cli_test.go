@@ -121,6 +121,8 @@ func (s *stubScanner) Scan(_ context.Context, credential string, workspace conne
 
 func (s *stubAuthenticator) Name() string { return "clickup" }
 
+func (s *stubAuthenticator) DisplayName() string { return "ClickUp" }
+
 func (s *stubAuthenticator) Authenticate(_ context.Context, credential string) (connector.Authentication, error) {
 	s.credential = credential
 	return s.result, s.err
@@ -316,6 +318,27 @@ func TestExportPrintsCreatedUnverifiedArchive(t *testing.T) {
 	}
 }
 
+func TestArchiveSummaryIncludesConnectorOwnedInventoryKinds(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	printArchiveSummary(&output, archive.Summary{
+		Status: archive.StatusCreatedUnverified,
+		Inventory: map[string]archive.EntityCount{
+			"containers":         {Expected: 1, Archived: 1},
+			"records":            {Expected: 5, Archived: 5},
+			"container:database": {Expected: 1, Archived: 1},
+			"record:block":       {Expected: 4, Archived: 4},
+			"record:page":        {Expected: 1, Archived: 1},
+		},
+	})
+	for _, expected := range []string{"containers", "records", "container:database", "record:block", "record:page"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Errorf("archive summary omitted %q: %q", expected, output.String())
+		}
+	}
+}
+
 func TestExportIncompleteIsNotCleanSuccess(t *testing.T) {
 	t.Parallel()
 	exporter := &stubArchiveExporter{result: archive.Summary{
@@ -340,7 +363,9 @@ func TestAuthHelpExplainsEnvironmentAndSavedCredentialPaths(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
+		Authenticator: &stubAuthenticator{},
+	})
 
 	code := app.Run([]string{"auth", "--help"})
 
@@ -384,7 +409,9 @@ func TestScanHelpExplainsWorkspaceSelectionAndCredential(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	app := New(&stdout, &stderr, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
+		Scanner: &stubScanner{},
+	})
 
 	if code := app.Run([]string{"scan", "--help"}); code != 0 {
 		t.Fatalf("Run(scan --help) returned %d, want 0", code)
@@ -458,7 +485,7 @@ func TestExtractCreatesCompleteRawSnapshotUsingSavedCredential(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"CLICKUP RAW EXTRACTION", "Workspace: Primary (ID: 100)", "Logical inventory digest: sha256:",
-		"Raw extraction complete.", "does not provide an atomic snapshot", "No portable model", "No source data modified.",
+		"Raw extraction complete.", "records the connector's point-in-time consistency claim", "No portable model", "No source data modified.",
 	} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Errorf("extract output does not contain %q: %q", expected, stdout.String())
@@ -564,7 +591,7 @@ func TestScanUsesSavedCredentialAndPrintsCompletedInventory(t *testing.T) {
 		"Tasks/subtasks         SUPPORTED",
 		"Docs                   PARTIAL",
 		"All supported M2 traversals and pagination completed",
-		"does not provide an atomic snapshot",
+		"Scope and consistency are limited to what the selected connector established",
 		"No archive or portability-completeness claim was made.",
 		"No source data modified.",
 	} {
@@ -589,7 +616,7 @@ func TestPrintScanExposesVersionedCapabilityContract(t *testing.T) {
 			Implementation: connector.CapabilitySupported, Availability: connector.CapabilityAvailabilityAvailable,
 			State: connector.CapabilitySupported, Note: "complete traversal",
 		}},
-	})
+	}, "ClickUp")
 	for _, expected := range []string{"Tasks/subtasks         SUPPORTED", "required=REQUIRED", "availability=AVAILABLE", "id=items"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Errorf("scan output omits %q: %q", expected, output.String())
@@ -1283,6 +1310,65 @@ func TestMissingAuthenticationNamesTheConnectorsOwnVariable(t *testing.T) {
 	}
 }
 
+func TestHumanFacingCommandCopyUsesTheSelectedConnector(t *testing.T) {
+	t.Parallel()
+
+	workspace := connector.Workspace{ID: "w1", Name: "Example"}
+	authenticator := &renamedAuthenticator{stubAuthenticator: stubAuthenticator{result: connector.Authentication{
+		Identity: connector.Identity{ID: "u1", Name: "User"}, Workspaces: []connector.Workspace{workspace},
+	}}}
+	scanner := &renamedScanner{stubScanner: stubScanner{result: connector.ScanResult{Workspace: workspace}}}
+	extractor := &renamedExtractor{}
+
+	for _, testCase := range []struct {
+		name string
+		args []string
+	}{
+		{name: "auth help", args: []string{"auth", "--help"}},
+		{name: "scan help", args: []string{"scan", "--help"}},
+		{name: "extract help", args: []string{"extract", "--help"}},
+		{name: "verify help", args: []string{"verify", "--help"}},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			code, stdout, stderr := runCLI(t, Options{
+				Authenticator: authenticator, Scanner: scanner, Extractor: extractor,
+			}, testCase.args...)
+			if code != 0 || stderr != "" {
+				t.Fatalf("code=%d stderr=%q", code, stderr)
+			}
+			if strings.Contains(stdout, "ClickUp") || strings.Contains(stdout, "ALIH_CLICKUP_TOKEN") {
+				t.Fatalf("selected-connector help leaked ClickUp copy: %q", stdout)
+			}
+			if testCase.name != "verify help" && (!strings.Contains(stdout, "Example Provider") || !strings.Contains(stdout, "ALIH_EXAMPLE_PROVIDER_TOKEN")) {
+				t.Errorf("selected connector is not named by its help: %q", stdout)
+			}
+		})
+	}
+
+	code, stdout, stderr := runCLI(t, Options{
+		Authenticator:   authenticator,
+		CredentialStore: &stubCredentialStore{loaded: "token", location: "/secure/credentials.json"},
+	}, "auth")
+	if code != 0 || stderr != "" {
+		t.Fatalf("auth code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Authenticated with Example Provider") || strings.Contains(stdout, "ClickUp") {
+		t.Errorf("auth output does not belong to the selected connector: %q", stdout)
+	}
+
+	code, stdout, stderr = runCLI(t, Options{
+		Authenticator: authenticator, Scanner: scanner,
+		CredentialStore: &stubCredentialStore{loaded: "token"},
+	}, "scan")
+	if code != 0 || stderr != "" {
+		t.Fatalf("scan code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "ALIH — EXAMPLE PROVIDER SCAN") || strings.Contains(stdout, "ClickUp") {
+		t.Errorf("scan output does not belong to the selected connector: %q", stdout)
+	}
+}
+
 // renamedAuthenticator and renamedScanner stand in for a connector that is not
 // ClickUp, without introducing one.
 type renamedAuthenticator struct{ stubAuthenticator }
@@ -1293,3 +1379,7 @@ func (renamedAuthenticator) DisplayName() string { return "Example Provider" }
 type renamedScanner struct{ stubScanner }
 
 func (renamedScanner) Name() string { return "example-provider" }
+
+type renamedExtractor struct{ stubExtractor }
+
+func (renamedExtractor) Name() string { return "example-provider" }

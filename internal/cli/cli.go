@@ -134,7 +134,7 @@ Usage:
   alih version
 `
 
-const backupHelpText = `ALIH creates a verified portable ClickUp backup.
+const backupHelpTemplate = `ALIH creates a verified portable %s backup.
 
 Usage:
   alih backup [--workspace-id ID] [--destination PATH]
@@ -152,34 +152,34 @@ sealed archive preserves independent M5 verification of the archive contents.
 
 Only VERIFIED and VERIFIED_WITH_LIMITATIONS are successful backup results.
 INCOMPLETE, FAILED, a failed stage, or an interruption exits non-zero and is
-never presented as a completed backup. ALIH uses ClickUp's official read-only
-API and does not modify source data.
+never presented as a completed backup. ALIH uses the selected connector's
+official read-only API and does not modify source data.
 `
 
-const authHelpText = `Configure and verify local ClickUp authentication.
+const authHelpTemplate = `Configure and verify local %s authentication.
 
 Usage:
   alih auth
 
-For initial setup, provide ALIH_CLICKUP_TOKEN in the process environment.
+For initial setup, provide %s in the process environment.
 After successful verification, ALIH saves it in the user configuration directory.
-Later runs load the saved credential when ALIH_CLICKUP_TOKEN is not set.
+Later runs load the saved credential when that environment variable is not set.
 The token is never accepted as a command-line argument.
 `
 
-const scanHelpText = `Inventory one ClickUp Workspace through the official read-only API.
+const scanHelpTemplate = `Inventory one %s Workspace through the selected connector's official read-only API.
 
 Usage:
   alih scan [--workspace-id ID] [--json]
 
 If exactly one Workspace is accessible, it is selected automatically.
 If multiple Workspaces are accessible, --workspace-id is required.
-The token is loaded from ALIH_CLICKUP_TOKEN or the verified local credential.
+The token is loaded from %s or the verified local credential.
 Scan does not create an archive or make a portability-completeness claim.
 --json prints a stable machine-readable scan and operational assessment.
 `
 
-const extractHelpText = `Extract raw ClickUp API evidence for one Workspace.
+const extractHelpTemplate = `Extract raw %s API evidence for one Workspace.
 
 Usage:
   alih extract --output PATH [--workspace-id ID]
@@ -187,7 +187,7 @@ Usage:
 PATH must not already exist. A complete traversal creates PATH. A failure or
 gracefully interrupted traversal is preserved as PATH.failed and marked FAILED.
 An uncatchable termination can leave a private .partial-* directory whose
-run.json remains IN_PROGRESS. The token is loaded from ALIH_CLICKUP_TOKEN or
+run.json remains IN_PROGRESS. The token is loaded from %s or
 the verified local credential and is never stored in the snapshot.
 
 M3 output contains raw successful JSON responses, a request/failure ledger,
@@ -216,9 +216,9 @@ const verifyHelpText = `Independently verify an existing M4 portable archive.
 Usage:
   alih verify --archive PATH [--json]
 
-Verification reads the archive only. It never contacts ClickUp, never modifies
-the source, and never writes to the archive under test, so its result describes
-internal archive integrity rather than current source state.
+Verification reads the archive only. It never contacts the source service,
+never modifies the source, and never writes to the archive under test, so its
+result describes internal archive integrity rather than current source state.
 
 It checks archive structure, manifest agreement, recorded file checksums,
 SQLite integrity, the archived raw M3 evidence and its checksums, expected
@@ -790,23 +790,52 @@ func printArchiveSummary(output io.Writer, summary archive.Summary) {
 	}
 	fmt.Fprintln(output, "Verification: NOT_RUN")
 	fmt.Fprintln(output, "\nArchived inventory")
-	for _, name := range []string{"spaces", "folders", "lists", "tasks", "subtasks", "comments", "attachments", "custom_fields", "relationships"} {
+	for _, name := range orderedKeys(summary.Inventory, []string{
+		"containers", "collections", "records", "nested_records", "comments", "attachments", "custom_fields", "relationships",
+	}) {
 		count := summary.Inventory[name]
 		fmt.Fprintf(output, "%-16s expected=%d archived=%d unresolved=%d\n", name, count.Expected, count.Archived, count.Unresolved)
 	}
 	fmt.Fprintln(output, "\nObserved portable entities")
-	for _, name := range []string{"workspaces", "identities", "record_identity_roles", "record_tags", "record_field_values"} {
+	for _, name := range orderedKeys(summary.Observed, []string{
+		"workspaces", "identities", "record_identity_roles", "record_tags", "record_field_values",
+	}) {
 		fmt.Fprintf(output, "%-24s %d\n", name, summary.Observed[name])
 	}
 	fmt.Fprintln(output, "\nFiles: alih.db, manifest.json, schema.json, raw/, attachments/")
 	fmt.Fprintln(output, "No M5 verification was performed. No source data modified.")
 }
 
+// orderedKeys keeps the stable source-neutral totals first and includes every
+// connector-owned kind or legacy key after them. Export output must not hide a
+// new connector's inventory merely because Core did not know its vocabulary.
+func orderedKeys[V any](values map[string]V, preferred []string) []string {
+	keys := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(preferred))
+	for _, key := range preferred {
+		if _, present := values[key]; !present {
+			continue
+		}
+		keys = append(keys, key)
+		seen[key] = struct{}{}
+	}
+	var remaining []string
+	for key := range values {
+		if _, present := seen[key]; !present {
+			remaining = append(remaining, key)
+		}
+	}
+	sort.Strings(remaining)
+	return append(keys, remaining...)
+}
+
 func (a *App) runExtract(args []string) int {
 	flags := flag.NewFlagSet("alih extract", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
-	flags.Usage = func() { fmt.Fprint(a.stdout, extractHelpText) }
-	workspaceID := flags.String("workspace-id", "", "ClickUp Workspace ID to extract")
+	flags.Usage = func() {
+		fmt.Fprintf(a.stdout, extractHelpTemplate, a.sourceDisplayName(), a.credentialEnvironmentVariable())
+	}
+	workspaceID := flags.String("workspace-id", "", "source Workspace ID to extract")
 	outputPath := flags.String("output", "", "new directory for M3 raw evidence")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -899,7 +928,7 @@ func (a *App) runExtract(args []string) int {
 		capabilities:            result.Capabilities,
 	})
 
-	fmt.Fprintln(a.stdout, "ALIH — CLICKUP RAW EXTRACTION")
+	fmt.Fprintf(a.stdout, "ALIH — %s RAW EXTRACTION\n", strings.ToUpper(a.sourceDisplayName()))
 	fmt.Fprintf(a.stdout, "\nWorkspace: %s (ID: %s)\n", displayValue(workspace.Name), displayValue(workspace.ID))
 	fmt.Fprintf(a.stdout, "Snapshot: %s\n", summary.Path)
 	fmt.Fprintf(a.stdout, "Logical inventory digest: %s\n", summary.LogicalDigest)
@@ -907,7 +936,7 @@ func (a *App) runExtract(args []string) int {
 	fmt.Fprintf(a.stdout, "Raw successful responses: %d\n", summary.RawResponses)
 	fmt.Fprintf(a.stdout, "Retried attempts: %d\n", summary.RetriedAttempts)
 	fmt.Fprintln(a.stdout, "\nRaw extraction complete.")
-	fmt.Fprintln(a.stdout, "Limitation: ClickUp does not provide an atomic snapshot; run.json records this extraction as non-atomic.")
+	fmt.Fprintln(a.stdout, "Consistency: run.json records the connector's point-in-time consistency claim; Alih does not infer a stronger one.")
 	fmt.Fprintln(a.stdout, "No portable model, SQLite database, manifest, or attachment binary was created.")
 	fmt.Fprintln(a.stdout, "No source data modified.")
 	return 0
@@ -944,8 +973,10 @@ func safeError(err error, secret string) string {
 func (a *App) runScan(args []string) int {
 	flags := flag.NewFlagSet("alih scan", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
-	flags.Usage = func() { fmt.Fprint(a.stdout, scanHelpText) }
-	workspaceID := flags.String("workspace-id", "", "ClickUp Workspace ID to scan")
+	flags.Usage = func() {
+		fmt.Fprintf(a.stdout, scanHelpTemplate, a.sourceDisplayName(), a.credentialEnvironmentVariable())
+	}
+	workspaceID := flags.String("workspace-id", "", "source Workspace ID to scan")
 	asJSON := flags.Bool("json", false, "print the machine-readable scan result")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -1014,7 +1045,7 @@ func (a *App) runScan(args []string) int {
 			return 1
 		}
 	} else {
-		printScan(a.stdout, result)
+		printScan(a.stdout, result, a.sourceDisplayName())
 	}
 	return 0
 }
@@ -1140,11 +1171,11 @@ func selectWorkspace(workspaces []connector.Workspace, requestedID, connectorDis
 	return workspaces[0], nil
 }
 
-func printScan(output io.Writer, result connector.ScanResult) {
+func printScan(output io.Writer, result connector.ScanResult, sourceDisplayName string) {
 	inventory := result.Inventory
-	fmt.Fprintln(output, "ALIH — CLICKUP SCAN")
+	fmt.Fprintf(output, "ALIH — %s SCAN\n", strings.ToUpper(displayValue(sourceDisplayName)))
 	fmt.Fprintf(output, "\nWorkspace: %s (ID: %s)\n", displayValue(result.Workspace.Name), displayValue(result.Workspace.ID))
-	fmt.Fprintln(output, "Scope: data accessible to the authenticated user through ClickUp's official API.")
+	fmt.Fprintf(output, "Scope: data accessible to the authenticated user through %s's official API.\n", displayValue(sourceDisplayName))
 	if connector.ValidateOperationalAssessment(result.Assessment) == nil {
 		fmt.Fprintln(output, "\nOperational assessment")
 		_ = connector.WriteOperationalAssessmentText(output, result.Assessment)
@@ -1177,18 +1208,18 @@ func printScan(output io.Writer, result connector.ScanResult) {
 	}
 	fmt.Fprintln(output, "\nScan complete.")
 	fmt.Fprintln(output, "All supported M2 traversals and pagination completed without unresolved failures.")
-	fmt.Fprintln(output, "Limitation: ClickUp does not provide an atomic snapshot; concurrent source changes can affect counts.")
+	fmt.Fprintln(output, "Scope and consistency are limited to what the selected connector established during this traversal.")
 	fmt.Fprintln(output, "No archive or portability-completeness claim was made.")
 	fmt.Fprintln(output, "No source data modified.")
 }
 
 func (a *App) runAuth(args []string) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprint(a.stdout, authHelpText)
+		fmt.Fprintf(a.stdout, authHelpTemplate, a.sourceDisplayName(), a.credentialEnvironmentVariable())
 		return 0
 	}
 	if len(args) > 0 {
-		fmt.Fprintln(a.stderr, "alih auth: command-line arguments are not accepted; use ALIH_CLICKUP_TOKEN for initial setup")
+		fmt.Fprintf(a.stderr, "alih auth: command-line arguments are not accepted; use %s for initial setup\n", a.credentialEnvironmentVariable())
 		return 2
 	}
 	if a.options.Authenticator == nil || a.options.CredentialStore == nil {
@@ -1224,9 +1255,9 @@ func (a *App) runAuth(args []string) int {
 		return 1
 	}
 
-	fmt.Fprintf(a.stdout, "Authenticated with ClickUp as %s (ID: %s)\n\n", displayValue(result.Identity.Name), displayValue(result.Identity.ID))
+	fmt.Fprintf(a.stdout, "Authenticated with %s as %s (ID: %s)\n\n", a.sourceDisplayName(), displayValue(result.Identity.Name), displayValue(result.Identity.ID))
 	if len(result.Workspaces) == 0 {
-		fmt.Fprintln(a.stdout, "Accessible Workspaces: none returned by ClickUp.")
+		fmt.Fprintf(a.stdout, "Accessible Workspaces: none returned by %s.\n", a.sourceDisplayName())
 	} else {
 		fmt.Fprintf(a.stdout, "Accessible Workspaces (%d):\n", len(result.Workspaces))
 		for _, workspace := range result.Workspaces {
@@ -1325,6 +1356,25 @@ func (a *App) connectorDisplayName() string {
 		}
 	}
 	return a.connectorName()
+}
+
+// sourceDisplayName is safe for user-facing copy even in small unit harnesses
+// that intentionally wire no connector. Production always returns the name
+// supplied by the selected adapter.
+func (a *App) sourceDisplayName() string {
+	name := strings.TrimSpace(a.connectorDisplayName())
+	if name == "" {
+		return "selected source"
+	}
+	return displayValue(name)
+}
+
+func (a *App) credentialEnvironmentVariable() string {
+	name := strings.TrimSpace(a.connectorName())
+	if name == "" {
+		return "ALIH_<CONNECTOR>_TOKEN"
+	}
+	return config.CredentialEnvironmentVariable(name)
 }
 
 // availableConnectors are the connector names this build ships, in a stable

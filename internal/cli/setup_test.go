@@ -87,6 +87,23 @@ func TestSetupRecordsEachModeWithoutPrompting(t *testing.T) {
 	}
 }
 
+func TestSetupGuidancePointsAtAnotherSource(t *testing.T) {
+	t.Parallel()
+	app, stdout, _, _ := setupCLI(t, "", false)
+	if code := app.Run([]string{"setup", "--mode", "self-managed"}); code != 0 {
+		t.Fatalf("code = %d", code)
+	}
+
+	output := stdout.String()
+	want := `To set up another source instead, run "alih --connector notion setup".`
+	if !strings.Contains(output, want) {
+		t.Errorf("setup guidance does not say %q: %s", want, output)
+	}
+	if strings.Contains(output, "one of the others") {
+		t.Errorf("setup guidance retains ambiguous wording: %s", output)
+	}
+}
+
 // TestAssistanceNeverClaimsASubscription is the product boundary in prose form:
 // choosing Assistance records intent and must not imply anything was activated.
 func TestAssistanceNeverClaimsASubscription(t *testing.T) {

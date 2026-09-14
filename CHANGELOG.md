@@ -9,8 +9,18 @@ compatibility, security, or release confidence.
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-09-14
+
 ### Fixed
 
+- **Connector-specific commands now describe the selected source.** After
+  selecting Notion, command help and the human output from `auth`, `scan`,
+  `extract`, and `backup` still named ClickUp, and `export` could omit Notion's
+  provider-owned inventory kinds from its summary. Human output now derives
+  the connector display name and credential variable from the selected adapter,
+  uses source-neutral scope and consistency wording, and prints every archived
+  inventory key. Archive formats, machine-readable JSON, credentials, and
+  source behavior are unchanged.
 - **`alih setup` recognises native Windows console handles.** In 0.2.6 it answered "no
   terminal is attached" in PowerShell and refused to prompt, so the primary
   onboarding command was unusable on Windows unless `--mode` was given. Alih

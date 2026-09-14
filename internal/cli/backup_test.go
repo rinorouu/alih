@@ -51,25 +51,44 @@ type backupRecorder struct {
 func (r *backupRecorder) call(name string) { r.calls = append(r.calls, name) }
 
 type backupAuthenticator struct {
-	recorder *backupRecorder
-	result   connector.Authentication
-	err      error
+	recorder         *backupRecorder
+	result           connector.Authentication
+	err              error
+	connectorName    string
+	connectorDisplay string
 }
 
-func (s *backupAuthenticator) Name() string { return "clickup" }
+func (s *backupAuthenticator) Name() string {
+	if s.connectorName != "" {
+		return s.connectorName
+	}
+	return "clickup"
+}
+func (s *backupAuthenticator) DisplayName() string {
+	if s.connectorDisplay != "" {
+		return s.connectorDisplay
+	}
+	return "ClickUp"
+}
 func (s *backupAuthenticator) Authenticate(_ context.Context, _ string) (connector.Authentication, error) {
 	s.recorder.call("auth")
 	return s.result, s.err
 }
 
 type backupScanner struct {
-	recorder  *backupRecorder
-	result    connector.ScanResult
-	err       error
-	workspace connector.Workspace
+	recorder      *backupRecorder
+	result        connector.ScanResult
+	err           error
+	workspace     connector.Workspace
+	connectorName string
 }
 
-func (s *backupScanner) Name() string { return "clickup" }
+func (s *backupScanner) Name() string {
+	if s.connectorName != "" {
+		return s.connectorName
+	}
+	return "clickup"
+}
 func (s *backupScanner) Scan(_ context.Context, _ string, workspace connector.Workspace) (connector.ScanResult, error) {
 	s.recorder.call("scan")
 	s.workspace = workspace
@@ -77,13 +96,19 @@ func (s *backupScanner) Scan(_ context.Context, _ string, workspace connector.Wo
 }
 
 type backupExtractor struct {
-	recorder  *backupRecorder
-	result    connector.ExtractionResult
-	err       error
-	workspace connector.Workspace
+	recorder      *backupRecorder
+	result        connector.ExtractionResult
+	err           error
+	workspace     connector.Workspace
+	connectorName string
 }
 
-func (s *backupExtractor) Name() string { return "clickup" }
+func (s *backupExtractor) Name() string {
+	if s.connectorName != "" {
+		return s.connectorName
+	}
+	return "clickup"
+}
 func (s *backupExtractor) Extract(_ context.Context, _ string, workspace connector.Workspace, sink connector.RawEvidenceSink) (connector.ExtractionResult, error) {
 	s.recorder.call("extract")
 	s.workspace = workspace
@@ -120,7 +145,7 @@ func (s *backupExporter) Export(_ context.Context, _, outputPath, _ string) (arc
 	// A real export seals a manifest carrying the assessment of the run that
 	// produced the archive; the stub writes the smallest truthful equivalent so
 	// state recording and reconciliation are exercised here.
-	assessment, err := connector.HealthyAssessment("clickup", connector.HealthBasisBackup, alphaTestTime,
+	assessment, err := connector.HealthyAssessment(s.connector, connector.HealthBasisBackup, alphaTestTime,
 		connector.AuthenticationAuthenticated, nil)
 	if err != nil {
 		return archive.Summary{}, err
@@ -280,6 +305,42 @@ func TestBackupHappyPathUsesExistingPipelineAndPublishesVerifiedBundle(t *testin
 				t.Fatal("credential appeared in user-facing output")
 			}
 		})
+	}
+}
+
+func TestBackupCopyUsesTheSelectedConnector(t *testing.T) {
+	t.Parallel()
+
+	h := newBackupHarness(t, verify.ResultVerifiedWithLimitations)
+	h.authenticator.connectorName = "example-provider"
+	h.authenticator.connectorDisplay = "Example Provider"
+	h.scanner.connectorName = "example-provider"
+	h.extractor.connectorName = "example-provider"
+	h.exporter.connector = "example-provider"
+
+	if code := h.app.Run([]string{"backup", "--help"}); code != 0 {
+		t.Fatalf("help code=%d stderr=%q", code, h.stderr.String())
+	}
+	if !strings.Contains(h.stdout.String(), "verified portable Example Provider backup") || strings.Contains(h.stdout.String(), "ClickUp") {
+		t.Fatalf("backup help does not belong to the selected connector: %q", h.stdout.String())
+	}
+	h.stdout.Reset()
+	h.stderr.Reset()
+
+	if code := h.app.Run([]string{"backup"}); code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, h.stderr.String())
+	}
+	combined := h.stdout.String() + h.stderr.String()
+	for _, expected := range []string{
+		"ALIH — EXAMPLE PROVIDER BACKUP",
+		"Your Example Provider data was not modified.",
+	} {
+		if !strings.Contains(combined, expected) {
+			t.Errorf("output omitted %q: %q", expected, combined)
+		}
+	}
+	if strings.Contains(combined, "ClickUp") {
+		t.Fatalf("selected-connector backup leaked ClickUp copy: %q", combined)
 	}
 }
 

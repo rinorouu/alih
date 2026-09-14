@@ -44,8 +44,8 @@ const (
 func (a *App) runBackup(args []string) int {
 	flags := flag.NewFlagSet("alih backup", flag.ContinueOnError)
 	flags.SetOutput(a.stderr)
-	flags.Usage = func() { fmt.Fprint(a.stdout, backupHelpText) }
-	workspaceID := flags.String("workspace-id", "", "ClickUp Workspace ID to back up")
+	flags.Usage = func() { fmt.Fprintf(a.stdout, backupHelpTemplate, a.sourceDisplayName()) }
+	workspaceID := flags.String("workspace-id", "", "source Workspace ID to back up")
 	destination := flags.String("destination", "", "absolute local backup root (default: ~/Alih)")
 	scheduleID := flags.String("schedule-id", "", "schedule identity supplied by Alih's native scheduler")
 	if err := flags.Parse(args); err != nil {
@@ -161,7 +161,7 @@ func (a *App) runBackup(args []string) int {
 		return a.failBackupWorkingState(recorder, "setup", state.StagePrepare, err, workingRoot, finalRoot, token)
 	}
 
-	fmt.Fprintln(a.stdout, "ALIH — CLICKUP BACKUP")
+	fmt.Fprintf(a.stdout, "ALIH — %s BACKUP\n", strings.ToUpper(a.sourceDisplayName()))
 	if recorder.attempt.ScheduleID != "" {
 		fmt.Fprintf(a.stdout, "\nSchedule: %s\n", recorder.attempt.ScheduleID)
 	}
@@ -286,7 +286,7 @@ func (a *App) runBackup(args []string) int {
 	fmt.Fprintf(a.stdout, "Status: %s\n", verification.Result)
 	fmt.Fprintf(a.stdout, "\nArchive:\n%s\n", finalArchive)
 	fmt.Fprintf(a.stdout, "\nRecovery report:\n%s\n", finalReport)
-	fmt.Fprintln(a.stdout, "\nYour ClickUp data was not modified.")
+	fmt.Fprintf(a.stdout, "\nYour %s data was not modified.\n", a.sourceDisplayName())
 	return 0
 }
 
@@ -295,7 +295,7 @@ func (a *App) backupOverlap(recorder *operationState, err error, token string) i
 	recorder.skip(state.StagePrepare, reason)
 	fmt.Fprintf(a.stderr, "alih backup: skipped: %s\n", safeError(err, token))
 	fmt.Fprintln(a.stderr, "Another backup for the same connector, Workspace, and destination is active. Nothing was queued.")
-	fmt.Fprintln(a.stderr, "Backup was not completed. Your ClickUp data was not modified.")
+	fmt.Fprintf(a.stderr, "Backup was not completed. Your %s data was not modified.\n", a.sourceDisplayName())
 	return 1
 }
 
@@ -389,7 +389,7 @@ func (a *App) backupFailure(recorder *operationState, stage, stateStage string, 
 	if workingRoot != "" {
 		fmt.Fprintf(a.stderr, "Failed working state: %s\n", workingRoot)
 	}
-	fmt.Fprintln(a.stderr, "Backup was not completed. Your ClickUp data was not modified.")
+	fmt.Fprintf(a.stderr, "Backup was not completed. Your %s data was not modified.\n", a.sourceDisplayName())
 	return 1
 }
 

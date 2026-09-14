@@ -216,7 +216,7 @@ func (a *App) printConnectorGuidance() {
 	fmt.Fprintln(a.stdout, "  2. Run \"alih auth\" to verify and save it.")
 	fmt.Fprintln(a.stdout, "  3. Run \"alih backup\" to create and verify a backup.")
 	if others := a.otherConnectors(); len(others) > 0 {
-		fmt.Fprintf(a.stdout, "Use \"alih --connector %s setup\" to set one of the others up instead.\n", others[0])
+		fmt.Fprintf(a.stdout, "To set up another source instead, run \"alih --connector %s setup\".\n", others[0])
 	}
 }
 
