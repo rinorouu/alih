@@ -183,7 +183,6 @@ available. This contacts nobody, creates no account, and unlocks no features.
 
 ## Documentation
 
-- [Alpha scope and expectations](ALPHA.md)
 - [Connector support and contracts](docs/connectors.md)
 - [Operator guide](OPERATOR.md)
 - [Hardening notes](HARDENING.md)
