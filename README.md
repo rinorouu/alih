@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/assets/alih-banner.png" alt="Alih — Export. Archive. Own." width="100%">
+</p>
+
+<p align="center">
   <a href="https://github.com/rinorouu/alih/actions/workflows/ci.yml"><img height="28" alt="CI" src="https://github.com/rinorouu/alih/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/rinorouu/alih/releases/latest"><img height="28" alt="Release" src="https://img.shields.io/github/v/release/rinorouu/alih?style=flat-square"></a>
   <a href="https://github.com/rinorouu/alih/blob/main/LICENSE"><img height="28" alt="License" src="https://img.shields.io/github/license/rinorouu/alih?style=flat-square"></a>
@@ -7,57 +11,39 @@
 
 # Alih
 
-Alih is a free and open-source, local-first SaaS data portability tool. It is
-designed to answer a specific question:
+Alih creates local, portable, and independently verified backups of SaaS data.
+It preserves the source API evidence, builds a readable local archive, and
+reports exactly what was recovered and what could not be proven.
 
-> What can actually be recovered outside the source SaaS, and can we prove that
-> the exported representation is complete within the supported scope?
+> **Alpha:** use Alih alongside your existing backup and data-protection
+> practices. ClickUp is the reference connector; Notion support is experimental.
 
-Alih connects to a SaaS through its official API, preserves raw responses,
-builds a portable local representation, independently verifies the resulting
-archive, and reports what it can and cannot prove.
+## Why Alih
 
-**Status: Alpha.** Alih is early software and should be used alongside your
-existing backup and data-protection practices. ClickUp is the reference
-connector and Notion is supported experimentally; neither is part of Alih's
-core identity. Select one with `--connector`, which defaults to `clickup`.
-
-See [CHANGELOG.md](CHANGELOG.md) for tagged, released, and pending changes.
-
-## Principles
-
-- **Read-only.** Every request to the source is a `GET`. Alih never creates,
-  modifies, or deletes anything at the source.
-- **Local-first.** The current Alpha workflow requires no Alih backend, cloud
-  storage, or telemetry. Your data and credential stay on your machine.
-- **No silent loss.** Expected and archived counts are reconciled. A shortfall
-  fails the archive instead of passing quietly.
-- **Evidence over assumption.** `SUPPORTED`, `PARTIAL`, `UNSUPPORTED`,
-  `UNAVAILABLE`, `UNKNOWN`, and `FAILED` remain distinct.
-- **Fail closed.** Corruption, missing data, broken references, count
-  mismatches, and unproven claims prevent a clean verified result.
-- **Credentials stay out.** The token never reaches logs, archives, reports,
-  or command output, and is never accepted as a command-line argument.
-
-If Alih expects 12,491 records and archives 12,487, the result is not
-`VERIFIED`. It is `INCOMPLETE`, with the unresolved records reported.
+- **Read-only:** Alih does not create, edit, or delete source data.
+- **Local-first:** data and credentials stay on your machine. There is no Alih
+  cloud backend or telemetry.
+- **Verifiable:** expected and archived records are reconciled, then the archive
+  is checked independently.
+- **Fail-closed:** missing data, corruption, broken references, or unsupported
+  claims cannot silently produce a clean result.
+- **Portable:** the result includes SQLite data, raw API evidence, checksums,
+  and a human-readable recovery report.
 
 ## Install
 
-The official installers select the latest stable release, download the matching
-binary and `SHA256SUMS`, and refuse to install unless SHA-256 verification
-succeeds. They install at user level and do not use `sudo` or request
+The official installers download the correct binary for your platform, verify
+its SHA-256 checksum, and install it for the current user without `sudo` or
 Administrator privileges.
 
-The commands below execute the official installer delivered over HTTPS. To
-inspect it first, download the same `install.sh` or `install.ps1` URL to a file,
-review it, and then run the local file.
-
-### Linux/macOS/WSL
+### Linux, macOS, or WSL
 
 ```bash
 curl -fsSL https://github.com/rinorouu/alih/releases/latest/download/install.sh | sh
+~/.local/bin/alih --version
 ```
+
+Open a new terminal if `alih` is not found immediately afterward.
 
 ### Windows
 
@@ -65,89 +51,37 @@ Run in PowerShell:
 
 ```powershell
 irm https://github.com/rinorouu/alih/releases/latest/download/install.ps1 | iex
+& "$env:LOCALAPPDATA\Alih\bin\alih.exe" --version
 ```
 
-The default location is `%LOCALAPPDATA%\Alih\bin\alih.exe`. The installer adds
-that directory to the current user's `PATH` when needed; open a new terminal
-afterward. It never changes the machine-wide `PATH`.
+The default executable is `%LOCALAPPDATA%\Alih\bin\alih.exe`. Open a new
+terminal if the updated user `PATH` is not visible yet.
 
-The native Windows executable is currently unsigned. On Windows 11, Microsoft
-Smart App Control may block `alih.exe` because its publisher cannot be verified.
-If this happens, use Alih through WSL. Keep Smart App Control, Microsoft
-Defender, and SmartScreen enabled, and do not change security policies to run
-Alih.
+The Windows binary is currently unsigned. Windows may block it because the
+publisher cannot be verified. Keep Smart App Control, Microsoft Defender, and
+SmartScreen enabled; use Alih through WSL if native execution is blocked.
 
-Set `ALIH_INSTALL_DIR` before running an installer to choose another absolute,
-user-writable directory.
+Prebuilt binaries, installers, and `SHA256SUMS` are also available on the
+[Releases page](https://github.com/rinorouu/alih/releases/latest).
 
-### Manual installation
+## First backup
 
-Prebuilt binaries remain available from
-[GitHub Releases](https://github.com/rinorouu/alih/releases):
-
-- `alih-linux-amd64`
-- `alih-linux-arm64`
-- `alih-windows-amd64.exe`
-- `alih-darwin-amd64`
-- `alih-darwin-arm64`
-
-Download `SHA256SUMS` from the same release and verify the selected binary's
-SHA-256 entry before running it. On Linux and macOS, then make it executable
-and place it in a directory in `PATH` under the name `alih`:
-
-```bash
-mkdir -p ~/.local/bin
-chmod +x alih-<platform>-<architecture>
-mv alih-<platform>-<architecture> ~/.local/bin/alih
-~/.local/bin/alih --version
-```
-
-On Windows, compare `Get-FileHash -Algorithm SHA256` with `SHA256SUMS`, then
-install the verified file as `alih.exe` in a user-level directory.
-
-### Build from source
-
-Building Alih requires Go 1.22 or later and cgo because the archive uses
-SQLite.
-
-```bash
-git clone https://github.com/rinorouu/alih.git
-cd alih
-go build -o alih ./cmd/alih
-```
-
-## Quick start
-
-The primary Alpha workflow is:
+Alih is self-managed by default. The setup command records that choice locally
+and points you to the next step:
 
 ```text
 alih setup
-alih auth
-alih backup
 ```
 
-`alih setup` asks how Alih is operated and points you at the rest. It is
-optional — an installation that never runs it is self-managed, and `alih auth`
-works on its own exactly as it always has.
+### ClickUp
 
-Alih ships two connectors. `--connector` selects one and defaults to `clickup`:
-
-```text
-alih --connector clickup backup
-alih --connector notion backup
-```
-
-Each connector has its own token, named after it: `ALIH_CLICKUP_TOKEN` and
-`ALIH_NOTION_TOKEN`. Notion is experimental — see
-[Connector support](docs/connectors.md) for what that means.
-
-For initial authentication, provide a ClickUp personal API token through the
-environment. Alih verifies and stores it locally for subsequent runs.
+Set a personal API token, verify it, then create a backup:
 
 ```bash
 export ALIH_CLICKUP_TOKEN='YOUR_CLICKUP_TOKEN'
 alih auth
 unset ALIH_CLICKUP_TOKEN
+alih backup
 ```
 
 In Windows PowerShell:
@@ -156,363 +90,122 @@ In Windows PowerShell:
 $env:ALIH_CLICKUP_TOKEN = 'YOUR_CLICKUP_TOKEN'
 alih auth
 Remove-Item Env:ALIH_CLICKUP_TOKEN
-```
-
-After successful verification, Alih stores the token in `credentials.json`
-under the operating system's user configuration directory. On Linux and
-macOS, Alih requires user-only directory and file permissions. On Windows, the
-file relies on the user profile's access controls. Alih does not encrypt this
-file, put it in an archive, or print the token in normal command output.
-
-If you would rather Alih kept no copy — because the token is injected per run
-from a secret store, or the machine is ephemeral — set
-`ALIH_SAVE_CREDENTIAL=0`. `backup`, `scan`, and `extract` then use the token in
-the environment and save nothing. `alih auth` still saves, because saving is
-what that command is for. Caching is never a precondition for the work either:
-if the credential has been verified but cannot be written to disk, Alih says so
-and carries on rather than losing a backup over it.
-
-Create and independently verify a backup:
-
-```bash
 alih backup
 ```
 
-If more than one accessible ClickUp Workspace exists, select one explicitly:
+### Notion (experimental)
+
+Select the Notion connector explicitly:
 
 ```bash
-alih backup --workspace-id WORKSPACE_ID
+export ALIH_NOTION_TOKEN='YOUR_NOTION_TOKEN'
+alih --connector notion auth
+unset ALIH_NOTION_TOKEN
+alih --connector notion backup
 ```
 
-A completed backup is stored under
-`~/Alih/<workspace>/<UTC-start-time>/`. The directory contains a sealed
-`archive/` and a `recovery-report.html` beside it. A backup is not reported as
-successful until independent verification finishes.
+If the authenticated account can access more than one Workspace, add
+`--workspace-id WORKSPACE_ID` to `backup`.
 
-## Advanced commands
-
-The individual pipeline commands remain available for inspection,
-troubleshooting, development, and advanced use:
+A completed backup is written to:
 
 ```text
-alih status [--json] [--refresh] [--reconcile]
-alih notify [--json]
-alih notify --test DESTINATION_ID [--json]
-alih schedule check [--json]
-alih schedule preview ID [--platform linux|darwin|windows] [--json]
-alih schedule inspect ID [--json]
-alih schedule install ID
-alih schedule remove ID
-alih scan [--workspace-id ID] [--json]
-alih extract --output PATH [--workspace-id ID]
-alih export --snapshot PATH [--output PATH]
-alih verify --archive PATH
-alih report --archive PATH [--format text|html|json] [--output PATH]
-alih organize --archive PATH --output PATH [--json]
+~/Alih/<workspace>/<UTC-start-time>/
+├── archive/
+└── recovery-report.html
 ```
 
-`status` reports what Alih has recorded about its own runs: the last attempt,
-the last successful backup, the verification result and whether the archive it
-refers to is still unchanged, and the connector health observed at the time,
-each with its own age. It also summarises the recorded event history for each
-scope, as context that never decides the status. It reads local records only
-and makes no source request unless `--refresh` is given, which makes exactly
-one authentication request.
-`--reconcile` reads the backup destination, verifies every archive found there,
-and records what that proves, so backups Alih has no record of become visible
-again; failed and abandoned runs are reported but never counted as backups.
-Its exit code is `0` healthy, `1` needs attention, `3` nothing recorded that can
-be called healthy, and `4` local state that cannot be read.
+The token is never accepted as a command-line argument or written into an
+archive. `auth` verifies and stores it in the current user's configuration
+directory. If no local copy should be kept, provide the token to each `backup`,
+`scan`, or `extract` run with `ALIH_SAVE_CREDENTIAL=0`; do not run `auth`, whose
+purpose is to save the credential.
 
-Notifications are disabled by default. `alih notify` validates the local
-configuration and makes no network request; `alih notify --test ID` is the
-explicit live-test path and replays the newest real recorded event selected by
-that destination. Normal operations deliver only the stable event types each
-destination explicitly allowlists. Delivery is synchronous, has bounded
-timeouts and retries, refuses redirects, and carries a stable idempotency key.
-A failed notification is visible in `alih status` but never changes a verified
-archive or turns a successful backup into a failed one.
-
-The one supported transport is an HTTPS webhook. Create
-`notifications.json` in Alih's user configuration directory: normally
-`~/.config/alih/` on Linux, `~/Library/Application Support/alih/` on macOS, or
-`%AppData%\alih\` on Windows. On Linux and macOS, keep the directory `0700` and
-the file `0600`.
-
-```json
-{
-  "schema_version": 1,
-  "destinations": [
-    {
-      "id": "ops",
-      "enabled": true,
-      "type": "webhook",
-      "url": "https://hooks.example.com/alih",
-      "events": [
-        "operation.failed",
-        "connector.unhealthy",
-        "authentication.problem"
-      ],
-      "secret_env": "ALIH_NOTIFY_OPS_TOKEN",
-      "timeout_seconds": 10,
-      "max_attempts": 3
-    }
-  ]
-}
-```
-
-`secret_env` is optional. When present, Alih reads that environment variable
-at delivery time and sends its value as a bearer token. Only the variable name
-is stored; its value must not be put in the JSON file. Status and command
-output show only the webhook scheme and host, never its path, query, fragment,
-bearer value, response body, or other destination-controlled text. Retryable
-delivery is attempted only during the current invocation; there is no hidden
-background worker or durable outbox. A receiving webhook should enforce the
-provided idempotency key if duplicate processing matters.
-
-Recurring backups use the operating system's user-level scheduler, not an Alih
-daemon: systemd user timers on Linux and WSL, launchd LaunchAgents on macOS,
-and per-user Task Scheduler tasks on Windows. Configuration is disabled until
-the user creates `schedules.json` beside `notifications.json`. The initial
-portable cadence is deliberately daily local civil time; the native scheduler
-owns daylight-saving transitions. `run_once` asks it to coalesce a missed
-trigger after sleep/offline time rather than queue every missed run.
-
-```json
-{
-  "schema_version": 1,
-  "schedules": [
-    {
-      "id": "daily-main",
-      "enabled": true,
-      "operation": "backup",
-      "connector": "clickup",
-      "workspace_id": "WORKSPACE_ID",
-      "destination": "/absolute/path/to/Alih",
-      "cadence": {
-        "frequency": "daily",
-        "at": "02:30",
-        "timezone": "local",
-        "missed_run_policy": "run_once"
-      }
-    }
-  ]
-}
-```
-
-On Windows, use an absolute drive path such as
-`C:\\Users\\YOUR_NAME\\Alih`. `alih schedule check` validates only the local
-file. `preview` prints deterministic artifacts and exact argument arrays
-without changing the machine. `install` and `remove` are the only mutating
-actions and always target the current user; `inspect` compares installed files
-and asks the native scheduler whether the task is registered.
-
-Generated scheduler files contain the absolute Alih executable, Workspace ID,
-and destination, but no token, bearer value, or environment secret. The
-scheduled account must already be able to read Alih's saved credential and
-write the destination. The executable's directory does not need to be in
-`PATH`; its absolute path and working directory are recorded. Locale is not
-used for cadence parsing, and timezone is the machine's local timezone. WSL
-requires a working systemd user session. Linux execution after logout may
-require an administrator to enable user lingering; Alih never escalates
-privileges automatically. The current macOS LaunchAgent and Windows
-InteractiveToken task run in the user's logged-in session.
-
-Every scheduled trigger invokes the ordinary `alih backup` pipeline, including
-independent verification, status, events, and optional notifications. A
-portable OS-handle lock covers connector + Workspace + destination. If another
-backup owns that scope, the new trigger exits non-zero as `SKIPPED`, records
-`OPERATION_OVERLAP`, and queues nothing. A crash or uncatchable termination
-releases the OS handle automatically; the retained lock file is inspection
-metadata and never acts as a stale lock.
-
-`organize` builds an optional, disposable browsing view beside a canonical
-archive: one directory per Workspace, container, and collection, a Markdown
-page per record, separately copied attachments, and a `provenance.json` index
-mapping every generated file back to its portable identifier, original source
-identifier, and raw evidence path. It is derived data for reading, not a
-restore source and not a ClickUp replica.
-
-The archive is independently verified before generation and again immediately
-before publication; only `VERIFIED` and `VERIFIED_WITH_LIMITATIONS` are
-accepted, and the disclosed limitations are repeated in the view itself. The
-canonical archive is opened read-only and is never modified. The view is built
-in a private staging directory and published with a single rename, so an
-interrupted run publishes nothing. The output must not already exist: Alih
-never merges into or edits a previous view, because regenerating one is
-cheaper than reconciling one. Two runs over the same archive produce identical
-content, so a view can be deleted and rebuilt at any time.
-
-Generated names keep the original Unicode text, without normalisation, and add
-a short prefix of the portable identifier so that two records with the same
-name — or names differing only in case — never collide. Characters Windows
-reserves are replaced, reserved basenames are escaped, and each component is
-length-bounded so the deepest generated path stays usable on all three
-supported platforms.
-
-`scan` establishes an inventory and makes no portability claim; `--json`
-prints that inventory together with the connector capability contract and
-the operational health assessment of the same run. `extract` preserves raw
-evidence without building a portable model. `export` creates an
-archive marked `CREATED_UNVERIFIED`; creating an archive is not the same as
-verifying it. `verify` and `report` read the archive without contacting or
-modifying the source.
-
-## The archive
+## What a backup contains
 
 ```text
 archive/
-├── alih.db          portable SQLite representation, queryable without ClickUp
-├── manifest.json    archive inventory, capability states, and checksums
-├── schema.json      description of alih.db
-├── raw/             original API evidence and checksums
-└── attachments/     retrieved binaries
+├── alih.db          portable SQLite data
+├── manifest.json    inventory, capabilities, and checksums
+├── schema.json      database schema description
+├── raw/             original API evidence
+└── attachments/     downloaded files
 ```
 
-Every portable row retains its original source identifiers and a path into the
-raw evidence, allowing archived objects to be traced back to their source
-response. The portable model is source-neutral: containers, collections, and
-records, each keeping the connector's own name for what it is. `manifest.json`
-records neutral totals and the connector's own vocabulary beside them, so an
-archive describes its source in that source's words without Alih having to know
-them.
+The recovery report sits beside the sealed archive so the archive's checksums
+remain independently verifiable.
 
-The Recovery Report is written beside the archive rather than inside it. The
-archive is sealed by manifest checksums, so adding the report to it would make
-verification fail.
+Successful backup results are:
 
-`raw/` holds the provider's responses byte for byte, because that is what makes
-the archive provable. Those exact bytes include whatever ClickUp put in them,
-which for attachments is a short-lived signed download URL. Alih never writes
-its own token into an archive, and a signed provider URL never reaches
-`alih.db`, `manifest.json`, the verification result, the Recovery Report, or an
-organized view. Treat an archive as being as sensitive as the Workspace it came
-from, and share it accordingly.
-
-### Archive format compatibility
-
-`manifest.json` carries a schema version, and Alih states plainly which
-versions it reads.
-
-| | |
+| Result | Meaning |
 | --- | --- |
-| Written by this version | schema 3 |
-| Read and verified by this version | schema 2 and 3 |
+| `VERIFIED` | Everything expected within the supported scope was archived and proven. |
+| `VERIFIED_WITH_LIMITATIONS` | Supported data was proven, with limitations stated explicitly. |
 
-An archive written by an older Alih keeps the format it was sealed with. Alih
-verifies, reports, and organizes it as it is, and never rewrites or upgrades it
-in place.
+`INCOMPLETE` and `FAILED` are not successful backups and return a non-zero exit
+code.
 
-Going the other way does not work, by design: **an Alih older than 0.2.5 will
-refuse a schema 3 archive.** It reports a failed `manifest_integrity` check,
-names the schema version it found and the one it supports, and exits non-zero.
-The archive is not damaged — the older binary cannot make claims about a format
-it does not know, so it declines to make any. Verify with 0.2.5 or later
-instead of downgrading.
+## Useful commands
 
-An archive whose schema is outside the readable range is refused explicitly and
-is never interpreted under whichever schema the running build happens to
-implement.
+```text
+alih status [--json] [--refresh] [--reconcile]
+alih scan [--workspace-id ID] [--json]
+alih verify --archive PATH [--json]
+alih report --archive PATH [--format text|html|json]
+alih organize --archive PATH --output PATH [--json]
+alih schedule check|preview|install|inspect|remove
+alih notify [--json]
+```
 
-## Result states
+Run `alih <command> --help` for complete options. Use `--connector notion`
+before a command to operate on Notion; ClickUp remains the default.
 
-| State | Meaning |
-| --- | --- |
-| `VERIFIED` | Everything expected within supported scope was archived and proven. |
-| `VERIFIED_WITH_LIMITATIONS` | Supported data was proven; disclosed source or capability limitations remain. |
-| `INCOMPLETE` | Alih expected supported data that the archive does not contain. |
-| `FAILED` | Alih could not establish a trustworthy archive. |
+## Important limits
 
-Only `VERIFIED` and `VERIFIED_WITH_LIMITATIONS` are successful backup results.
-`INCOMPLETE` and `FAILED` exit non-zero.
+Alih proves the contents and internal consistency of the archive it creates. It
+does not claim that:
 
-## What Alih does not claim
+- the source exposed an atomic point-in-time snapshot;
+- the authenticated identity could see every object in the account;
+- every source-side automation, permission, view, or computed behavior can be
+  reconstructed;
+- verification of an archive proves that the live source is still unchanged;
+- a restore or cross-SaaS migration workflow exists in the current Alpha.
 
-- **Not a point-in-time snapshot.** ClickUp exposes no atomic snapshot across
-  the endpoints Alih traverses. Archived records may reflect different moments
-  during extraction.
-- **Not proof of account-wide visibility.** An archive contains what the
-  authenticating identity could access. Archive-internal evidence cannot prove
-  that the identity could see every object in a Workspace.
-- **No executable Custom Field semantics.** Formula, rollup, and other computed
-  fields are archived as observed values; their behavior is not reconstructed.
-- **Not a ClickUp replica.** Alih preserves its documented portable model, not
-  every source-side permission, automation, view, or rendering behavior.
-- **Not a statement about the source today.** Verification reads the archive
-  only and cannot prove that the source still matches it.
+Treat an archive as sensitive as the Workspace it contains. Raw evidence can
+include short-lived provider-signed attachment URLs.
 
-Alih does not use scraping, undocumented endpoints, or browser automation to
-turn unavailable source data into supported data.
+## Operation modes
 
-## Current Alpha scope
+Self-managed mode is free, open source, and the default. `alih setup` can also
+record interest in Alih Assistance, an optional managed service that is not yet
+available. This contacts nobody, creates no account, and unlocks no features.
 
-The Alpha has no web or desktop UI, Alih cloud backend, billing, telemetry,
-resident scheduler, continuous sync, restore workflow, cross-SaaS migration,
-production OAuth onboarding, or additional connectors.
+## Documentation
 
-## Run Alih yourself
+- [Alpha scope and expectations](ALPHA.md)
+- [Connector support and contracts](docs/connectors.md)
+- [Operator guide](OPERATOR.md)
+- [Hardening notes](HARDENING.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
-Alih is open-source software that users may build and run themselves. The
-current Alpha workflow does not require an Alih-hosted service.
+## Build from source
 
-## How Alih is operated
-
-Run `alih setup` to choose. It is safe to run again at any time, and you can
-move between the two freely without reinstalling or losing anything.
-
-**Self-managed — 100% free.** You configure and operate Alih yourself. This is
-the default: an installation that never runs `alih setup` is self-managed, and
-every command works without it.
-
-**Alih Assistance — an optional managed service.** Setup, scheduling and
-monitoring handled for you, running this same open-source build. **It is not
-available yet.** Choosing it today records that intent locally and contacts
-nobody — no account, no payment, nothing sent anywhere.
-
-Assistance is a service, not a paid edition. **Nobody pays to unlock a
-feature**, because nothing in Alih is locked: connectors, backup, verification,
-reports, the browsable view, scheduling and notifications all work identically
-however you answer. A test in `internal/hardening` enforces this by preventing
-any capability from even reading the usage mode.
-
-## Development
+Alih requires Go 1.22 or newer and a working C compiler because its SQLite
+driver uses cgo.
 
 ```bash
+git clone https://github.com/rinorouu/alih.git
+cd alih
+go build -o alih ./cmd/alih
 go test ./...
-go test -race ./...
-go vet ./...
 ```
-
-Building Alih requires Go 1.22 or newer and a working C compiler, because the
-SQLite driver uses cgo.
-
-## Contributing
-
-Contributions are welcome. Bug reports, documentation fixes, and small clear
-fixes can go straight to an issue or pull request; new features, new commands,
-and new connectors should start with an issue so the direction can be agreed
-before the code is written.
-
-Writing a connector is documented in [`docs/connectors.md`](docs/connectors.md):
-the contracts Alih Core requires, what stays provider-specific, and the
-conformance suite a connector is reviewed against.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the process, the principles a change
-must not break, and the checks CI runs.
-
-## Security
-
-Do not report security vulnerabilities in a public issue. Use GitHub's private
-vulnerability reporting on the
-[Security tab](https://github.com/rinorouu/alih/security).
-
-See [SECURITY.md](SECURITY.md) for what is in scope, what to include in a
-report, and what to expect after sending one.
 
 ## License
 
 Alih is free and open-source software licensed under the
-[Apache License 2.0](LICENSE). You may run, modify, and redistribute it,
-commercially or otherwise, subject to that license.
+[Apache License 2.0](LICENSE).
 
 Copyright 2025 rinorouu.
