@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/rinorouu/alih/actions/workflows/ci.yml"><img height="28" alt="CI" src="https://github.com/rinorouu/alih/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/rinorouu/alih/releases/latest"><img height="28" alt="Release" src="https://img.shields.io/github/v/release/rinorouu/alih?style=flat-square"></a>
-  <a href="https://github.com/rinorouu/alih/blob/main/LICENSE"><img height="28" alt="License" src="https://img.shields.io/github/license/rinorouu/alih?style=flat-square"></a>
-  <a href="https://github.com/rinorouu/alih/blob/main/go.mod"><img height="28" alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/rinorouu/alih?style=flat-square"></a>
+  <a href="https://github.com/rinorouu/alih/actions/workflows/ci.yml"><img height="34" alt="CI" src="https://img.shields.io/github/actions/workflow/status/rinorouu/alih/ci.yml?branch=main&amp;style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=CI&amp;labelColor=071A33"></a>
+  <a href="https://github.com/rinorouu/alih/releases/latest"><img height="34" alt="Release" src="https://img.shields.io/github/v/release/rinorouu/alih?style=for-the-badge&amp;logo=github&amp;logoColor=white&amp;label=release&amp;labelColor=071A33&amp;color=14C8D4"></a>
+  <a href="https://github.com/rinorouu/alih/blob/main/LICENSE"><img height="34" alt="License" src="https://img.shields.io/github/license/rinorouu/alih?style=for-the-badge&amp;logo=apache&amp;logoColor=white&amp;label=license&amp;labelColor=071A33&amp;color=14C8D4"></a>
+  <a href="https://github.com/rinorouu/alih/blob/main/go.mod"><img height="34" alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/rinorouu/alih?style=for-the-badge&amp;logo=go&amp;logoColor=white&amp;label=go&amp;labelColor=071A33&amp;color=14C8D4"></a>
 </p>
 
 # Alih
